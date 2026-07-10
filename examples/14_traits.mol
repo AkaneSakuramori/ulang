@@ -1,0 +1,13 @@
+trait Greet:
+    fn hello(self) -> str
+
+type Dog:
+    name: str
+
+impl Greet for Dog:
+    fn hello(self) -> str:
+        return "woof from ${self.name}"
+
+fn main():
+    let d = Dog("rex")
+    print(d.hello())

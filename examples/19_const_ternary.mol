@@ -1,0 +1,12 @@
+const PI = 3.14159
+const MAX_USERS = 1_000
+
+fn grade(score: int) -> str:
+    let label = "pass" if score >= 50 else "fail"
+    return label
+
+fn main():
+    print(PI)
+    print(MAX_USERS)
+    print(grade(72))
+    print(grade(30))

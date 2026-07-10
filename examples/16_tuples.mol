@@ -1,0 +1,7 @@
+fn main():
+    let point = (3, 4)
+    let (x, y) = point
+    print(x + y)
+
+    let pair = ("mol", 1)
+    print(pair)

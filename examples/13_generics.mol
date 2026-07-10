@@ -1,0 +1,8 @@
+fn max[T: Ord](a: T, b: T) -> T:
+    if a > b:
+        return a
+    return b
+
+fn main():
+    print(max(3, 9))
+    print(max(2.5, 1.5))

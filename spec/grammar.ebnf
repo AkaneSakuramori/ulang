@@ -1,0 +1,154 @@
+(*
+  Mol Language Grammar — v0
+  Notation: EBNF. Layout-sensitive: INDENT / DEDENT / NEWLINE are produced by the lexer.
+*)
+
+program        = { NEWLINE }, { top_level } ;
+
+top_level      = import_decl
+               | function_decl
+               | type_decl
+               | enum_decl
+               | trait_decl
+               | impl_decl
+               | const_decl ;
+
+(* ---------- imports ---------- *)
+
+import_decl    = "import", import_path, [ "as", IDENT ], NEWLINE
+               | "from", import_path, "import", import_list, NEWLINE ;
+import_path    = IDENT, { ".", IDENT } ;
+import_list    = IDENT, { ",", IDENT } ;
+
+(* ---------- declarations ---------- *)
+
+const_decl     = "const", IDENT, [ ":", type ], "=", expr, NEWLINE ;
+
+function_decl  = [ "pub" ], "fn", IDENT, [ generic_params ],
+                 "(", [ params ], ")", [ "->", type ], block ;
+params         = param, { ",", param } ;
+param          = IDENT, ":", type, [ "=", expr ] ;
+
+generic_params = "[", generic_param, { ",", generic_param }, "]" ;
+generic_param  = IDENT, [ ":", type_bound ] ;
+type_bound     = type, { "+", type } ;
+
+type_decl      = [ "pub" ], "type", IDENT, [ generic_params ], ":", NEWLINE,
+                 INDENT, { field }, DEDENT, [ derive_clause ] ;
+field          = IDENT, ":", type, NEWLINE ;
+
+enum_decl      = [ "pub" ], "enum", IDENT, [ generic_params ], ":", NEWLINE,
+                 INDENT, { variant }, DEDENT, [ derive_clause ] ;
+variant        = IDENT, [ "(", type, { ",", type }, ")" ], NEWLINE ;
+
+derive_clause  = "derive", "(", IDENT, { ",", IDENT }, ")", NEWLINE ;
+
+trait_decl     = [ "pub" ], "trait", IDENT, [ generic_params ], ":", NEWLINE,
+                 INDENT, { trait_member }, DEDENT ;
+trait_member   = "fn", IDENT, "(", [ params ], ")", [ "->", type ], NEWLINE ;
+
+impl_decl      = "impl", [ generic_params ], type, [ "for", type ], ":", NEWLINE,
+                 INDENT, { function_decl }, DEDENT ;
+
+(* ---------- types ---------- *)
+
+type           = "dyn"
+               | "[", type, "]"
+               | "{", type, ":", type, "}"
+               | "(", [ type, { ",", type } ], ")"
+               | "fn", "(", [ type, { ",", type } ], ")", "->", type
+               | IDENT, [ "[", type, { ",", type }, "]" ]
+               | type, "?" ;
+
+(* ---------- statements ---------- *)
+
+block          = ":", NEWLINE, INDENT, { statement }, DEDENT ;
+
+statement      = let_stmt
+               | var_stmt
+               | assign_stmt
+               | return_stmt
+               | if_stmt
+               | match_stmt
+               | while_stmt
+               | for_stmt
+               | with_stmt
+               | defer_stmt
+               | break_stmt
+               | continue_stmt
+               | expr_stmt ;
+
+let_stmt       = "let", pattern, [ ":", type ], "=", expr, NEWLINE ;
+var_stmt       = "var", IDENT, [ ":", type ], "=", expr, NEWLINE ;
+assign_stmt    = lvalue, assign_op, expr, NEWLINE ;
+assign_op      = "=" | "+=" | "-=" | "*=" | "/=" | "%=" ;
+return_stmt    = "return", [ expr ], NEWLINE ;
+break_stmt     = "break", NEWLINE ;
+continue_stmt  = "continue", NEWLINE ;
+defer_stmt     = "defer", expr, NEWLINE ;
+
+if_stmt        = "if", expr, block, { "elif", expr, block }, [ "else", block ] ;
+while_stmt     = "while", expr, block ;
+for_stmt       = "for", pattern, "in", expr, block ;
+with_stmt      = "with", expr, [ "as", IDENT ], block ;
+
+match_stmt     = "match", expr, ":", NEWLINE, INDENT, { match_arm }, DEDENT ;
+match_arm      = pattern, [ "if", expr ], "=>", ( expr, NEWLINE | block ) ;
+
+expr_stmt      = expr, NEWLINE ;
+
+(* ---------- patterns ---------- *)
+
+pattern        = "_"
+               | literal
+               | IDENT, [ "(", pattern, { ",", pattern }, ")" ]
+               | "(", pattern, { ",", pattern }, ")"
+               | IDENT ;
+
+(* ---------- expressions (precedence climbing) ---------- *)
+
+expr           = lambda | ternary ;
+lambda         = ( IDENT | "(", [ params ], ")" ), "=>", ( expr | block ) ;
+ternary        = or_expr, [ "if", or_expr, "else", expr ] ;
+
+or_expr        = and_expr, { "or", and_expr } ;
+and_expr       = not_expr, { "and", not_expr } ;
+not_expr       = [ "not" ], compare ;
+compare        = add_expr, { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ), add_expr } ;
+add_expr       = mul_expr, { ( "+" | "-" ), mul_expr } ;
+mul_expr       = unary, { ( "*" | "/" | "%" ), unary } ;
+unary          = [ "-" ], postfix ;
+postfix        = primary, { call_suffix | index_suffix | field_suffix | "?" } ;
+
+call_suffix    = "(", [ arg, { ",", arg } ], ")" ;
+arg            = [ IDENT, "=" ], expr ;
+index_suffix   = "[", expr, "]" ;
+field_suffix   = ".", IDENT ;
+
+primary        = literal
+               | IDENT
+               | "(", expr, ")"
+               | list_lit
+               | dict_lit
+               | tuple_lit ;
+
+list_lit       = "[", [ expr, { ",", expr } ], "]" ;
+dict_lit       = "{", [ expr, ":", expr, { ",", expr, ":", expr } ], "}" ;
+tuple_lit      = "(", expr, ",", [ expr, { ",", expr } ], ")" ;
+
+lvalue         = IDENT, { index_suffix | field_suffix } ;
+
+(* ---------- literals ---------- *)
+
+literal        = INT | FLOAT | STRING | BOOL | "none" ;
+BOOL           = "true" | "false" ;
+
+(* ---------- tokens (lexer) ---------- *)
+
+IDENT          = ( letter | "_" ), { letter | digit | "_" } ;
+INT            = digit, { digit | "_" } ;
+FLOAT          = digit, { digit }, ".", digit, { digit } ;
+STRING         = '"', { string_char | interpolation }, '"' ;
+interpolation  = "${", expr, "}" ;
+letter         = "a".."z" | "A".."Z" ;
+digit          = "0".."9" ;

@@ -1,0 +1,13 @@
+fn safe_div(a: int, b: int) -> Result[int, str]:
+    if b == 0:
+        return Err("division by zero")
+    return Ok(a / b)
+
+fn main():
+    match safe_div(10, 2):
+        Ok(v)  => print("ok ${v}")
+        Err(e) => print("err ${e}")
+
+    match safe_div(1, 0):
+        Ok(v)  => print("ok ${v}")
+        Err(e) => print("err ${e}")

@@ -1,0 +1,9 @@
+type User:
+    id: int
+    name: str
+    email: str?
+  derive(Display)
+
+fn main():
+    let u = User(1, "ada", none)
+    print(u.name)

@@ -1,0 +1,5 @@
+fn main():
+    let scores = {"ada": 90, "linus": 85, "grace": 95}
+    for name in scores.keys():
+        print("${name}: ${scores[name]}")
+    print(scores.len())

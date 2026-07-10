@@ -1,0 +1,7 @@
+import fs
+
+fn main():
+    with fs.open("out.txt") as f:
+        f.write("logged")
+        defer print("closed")
+    print("done")

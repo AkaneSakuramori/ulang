@@ -1,0 +1,10 @@
+import fs
+
+fn read_len(path: str) -> Result[int, str]:
+    let contents = fs.read(path)?
+    return Ok(contents.len())
+
+fn main():
+    match read_len("data.txt"):
+        Ok(n)  => print("length ${n}")
+        Err(e) => print("error ${e}")

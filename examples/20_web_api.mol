@@ -1,0 +1,20 @@
+import web
+import json
+
+type Todo:
+    id: int
+    title: str
+    done: bool
+  derive(Serialize, Deserialize)
+
+fn main():
+    let app = web.App()
+
+    app.get("/todos", req => json([Todo(1, "ship mol", false)]))
+
+    app.post("/todos", req => {
+        let t = req.body[Todo]?
+        return json(t)
+    })
+
+    app.listen(8080)
