@@ -6,7 +6,7 @@ Ulang is a compiled, statically-typed programming language with type inference,
 structured concurrency, and a clean, readable syntax. It compiles to native code,
 runs without a global interpreter lock, and treats errors as values.
 
-> Status: **1.8.7** — self-hosting Stages 1–3 complete (parser, semantic analysis, optimizer + bytecode + native codegen), cross-platform, optimizing compiler, garbage collector, package manager, and LSP.
+> Status: **1.9.0** — integrated self-hosted compiler with a validated bootstrap; self-hosting Stages 1–3 complete (parser, semantic analysis, optimizer + bytecode + native codegen), cross-platform, optimizing compiler, garbage collector, package manager, and LSP.
 
 ## Features
 
@@ -138,7 +138,18 @@ time; each stage is validated for identical behavior against the Python referenc
     control-flow core, producing binaries whose output is identical to `ulang build`.
 
 All three self-hosting stages — parsing, semantic analysis, and optimization/code
-generation — are complete, each validated against the Python reference.
+generation — are complete, each validated against the Python reference. They are
+integrated into a single compiler driver, invoked with `ulang selfhost`:
+
+```sh
+ulang selfhost program.ul            # compile via the self-hosted pipeline (bytecode)
+ulang selfhost program.ul --native   # emit native LLVM IR (numeric/control-flow core)
+```
+
+The bootstrap — the Python reference building and running the Ulang compiler, and the
+Ulang compiler compiling its own source — is validated end to end
+(`tests/test_bootstrap.py`, 150/150). See [docs/bootstrapping.md](docs/bootstrapping.md)
+for the full bootstrap process and the current state of self-hosting.
 
 ```sh
 cp path/to/program.ul input.ul

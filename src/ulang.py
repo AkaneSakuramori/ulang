@@ -12,7 +12,7 @@ from vm import VM
 from builtins_mod import UlangPanic
 import ast_nodes as ast
 
-VERSION = "1.8.7"
+VERSION = "1.9.0"
 
 
 def _optimize(tree):
@@ -373,6 +373,23 @@ version = "0.1.0"
     return 0
 
 
+def cmd_selfhost(path, target="bytecode"):
+    with open(path, "r", encoding="utf-8") as f:
+        source = f.read()
+    from selfhost_driver import Driver, SelfhostError
+    try:
+        with Driver() as d:
+            diags, output = d.compile(source, target=target)
+    except SelfhostError as e:
+        print(f"error: {path}: self-hosted compiler: {e}", file=sys.stderr)
+        return 1
+    if diags.strip():
+        sys.stdout.write(diags if diags.endswith("\n") else diags + "\n")
+        return 1
+    sys.stdout.write(output if output.endswith("\n") else output + "\n")
+    return 0
+
+
 def cmd_jit(path):
     with open(path, "r", encoding="utf-8") as f:
         source = f.read()
@@ -415,7 +432,7 @@ def _dispatch_remove(args):
 
 def main(argv):
     if len(argv) < 2:
-        print("usage: ulang <run|build|check|install|add|remove|update|publish|search|list|fmt|init|lsp|repl|...> ...", file=sys.stderr)
+        print("usage: ulang <run|build|check|selfhost|install|add|remove|update|publish|search|list|fmt|init|lsp|repl|...> ...", file=sys.stderr)
         return 2
     command = argv[1]
     if command in ("version", "--version", "-v"):
@@ -477,6 +494,9 @@ def main(argv):
         return cmd_build(argv[2], output)
     if command == "emit-ir":
         return cmd_emit_ir(argv[2])
+    if command == "selfhost":
+        target = "native" if "--native" in argv[3:] else "bytecode"
+        return cmd_selfhost(argv[2], target)
     if command == "escape":
         return cmd_escape(argv[2])
     if command == "gc-stats":

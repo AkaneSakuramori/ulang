@@ -50,6 +50,12 @@ compiler/
     across an execution corpus and the native example programs
     (`tests/test_selfhost_codegen.py`).
 
+All three stages are complete. The pipeline is integrated into a single driver — run
+`ulang selfhost <file>` to compile a program through the self-hosted compiler, or
+`ulang selfhost <file> --native` for native LLVM IR. The bootstrap is validated by
+`tests/test_bootstrap.py`, and [`docs/bootstrapping.md`](../../docs/bootstrapping.md)
+documents the full process and the current state of self-hosting.
+
 ## Note on literals
 
 The self-hosted pipeline exchanges a canonical syntax-tree form in which string and float

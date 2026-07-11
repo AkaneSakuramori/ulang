@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.9.0
+
+The self-hosted compiler is integrated into a single toolchain and its bootstrap is
+established and validated end to end.
+
+### Added
+- **Integrated self-hosted compiler** — `ulang selfhost <file>` runs the complete
+  self-hosted pipeline (lex → parse → type-check → optimize → bytecode) and emits the final
+  output; `--native` targets LLVM IR for the numeric/control-flow core. Diagnostics halt
+  compilation, matching the reference. The driver (`src/selfhost_driver.py`) is the thin
+  bootstrap host that runs the Ulang compiler stages and passes the canonical
+  syntax tree between them.
+- **Bootstrap validation** (`tests/test_bootstrap.py`) — proves, against the Python
+  reference specification, that (1) the self-hosted compiler is stage-for-stage equivalent
+  (tokens, syntax tree, diagnostics, exports, optimized tree, bytecode) across the example
+  programs, and (2) the self-hosted compiler compiles **its own source** through the front
+  and middle end (lex, parse, type-check, optimize) with results identical to the
+  reference. 150/150 checks.
+- **Bootstrapping guide** (`docs/bootstrapping.md`) documenting the pipeline, the two-stage
+  bootstrap, what is self-hosted today, and the remaining path to a Python-free toolchain.
+
+### Notes — honest state of self-hosting
+- The compiler **front and middle end** (lexer, parser, type checker, exports, constant
+  evaluation, optimizer) and **bytecode generation** are written in Ulang and proven
+  equivalent to the reference, including on the compiler's own source. Native code
+  generation covers the numeric/control-flow core.
+- **The runtime host is still the reference implementation.** A `.ul` program — including
+  each self-hosted compiler stage — is executed by the Ulang runtime, which today is the
+  Python interpreter/VM. A fully Python-independent toolchain requires compiling the Ulang
+  compiler to a standalone native binary, which in turn requires the native backend to
+  cover the full language (heap types, closures, GC). That is the objective beyond this
+  release; `docs/bootstrapping.md` details the path.
+- The string-interpolation / float-value representation boundary (opaque `(str)`/`(flt)`
+  atoms in the canonical tree) is documented and excluded from strict comparison where it
+  applies; it does not affect program behavior.
+
 ## 1.8.7
 
 ### Added
