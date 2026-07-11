@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.8.5
+
+### Added
+- **Self-hosting Stage 3 begins — AST optimizer** (`selfhost/compiler/optimizer.ul`). It
+  reproduces the behavior-preserving passes of the reference `src/optimizer.py`:
+  constant folding (integer and boolean), constant propagation through immutable
+  `let`/`const` bindings, dead-branch elimination (`if`/`elif`/`else`, `while false`, and
+  ternaries with constant conditions), and algebraic identities (`x + 0`, `0 + x`,
+  `x - 0`, `x * 1`, `1 * x`). It consumes the parser's syntax tree and emits an optimized
+  syntax tree byte-identical to the reference.
+- Validation (`tests/test_selfhost_optimizer.py`): the self-hosted optimizer's output is
+  verified identical to the reference across an optimization corpus exercising every pass,
+  all example programs, and 40 randomly generated programs.
+
+### Notes
+- The self-hosted pipeline exchanges a syntax-tree form in which integer and boolean
+  literals carry their values while string and float literals are opaque. Every optimizer
+  pass over integer/boolean/structural forms is reproduced exactly; folding of string and
+  float literal *values* (e.g. `"a" + "b"`, `1.5 + 2.5`) is a property of the reference's
+  literal-preserving AST, covered by the reference's own optimizer tests, and does not
+  affect program behavior. Remaining Stage-3 work: bytecode generation and native code
+  generation.
+
 ## 1.8.4
 
 Completes **Stage 2 of the self-hosting roadmap**: the self-hosted compiler now reproduces

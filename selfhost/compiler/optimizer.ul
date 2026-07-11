@@ -1,0 +1,631 @@
+import fs
+
+fn read_sexpr(text: str) -> dyn:
+    let chars = text.chars()
+    let state = [chars, chars.len(), 0]
+    return parse_node(state)
+
+fn cur(state: dyn) -> str:
+    if state[2] >= state[1]:
+        return ""
+    return state[0][state[2]]
+
+fn parse_node(state: dyn) -> dyn:
+    skip_ws(state)
+    if cur(state) == "(":
+        state[2] = state[2] + 1
+        var items = []
+        while true:
+            skip_ws(state)
+            if cur(state) == ")":
+                state[2] = state[2] + 1
+                return items
+            if cur(state) == "":
+                return items
+            items.push(parse_node(state))
+        return items
+    return parse_atom(state)
+
+fn parse_atom(state: dyn) -> str:
+    var s = ""
+    while state[2] < state[1]:
+        let c = state[0][state[2]]
+        if c == " " or c == "(" or c == ")":
+            break
+        s += c
+        state[2] = state[2] + 1
+    return s
+
+fn skip_ws(state: dyn):
+    while state[2] < state[1] and state[0][state[2]] == " ":
+        state[2] = state[2] + 1
+
+fn is_atom(node: dyn) -> bool:
+    return not is_list(node)
+
+fn tag(node: dyn) -> str:
+    if is_list(node):
+        if node.len() == 0:
+            return ""
+        return node[0]
+    return node
+
+# --- serialization back to one-line S-expression ---
+
+fn render(node: dyn) -> str:
+    if is_atom(node):
+        return node
+    var s = "("
+    var i = 0
+    while i < node.len():
+        if i > 0:
+            s += " "
+        s += render(node[i])
+        i = i + 1
+    s += ")"
+    return s
+
+# --- literal helpers ---
+
+fn is_number_str(s: str) -> bool:
+    if s.len() == 0:
+        return false
+    var start = 0
+    if s.chars()[0] == "-":
+        if s.len() == 1:
+            return false
+        start = 1
+    var i = start
+    while i < s.len():
+        let c = s.chars()[i]
+        if not (c >= "0" and c <= "9"):
+            return false
+        i = i + 1
+    return true
+
+fn is_int_lit(node: dyn) -> bool:
+    return is_atom(node) and is_number_str(node)
+
+fn is_bool_lit(node: dyn) -> bool:
+    return node == "true" or node == "false"
+
+fn is_intlike_lit(node: dyn) -> bool:
+    return is_int_lit(node) or is_bool_lit(node)
+
+fn is_literal(node: dyn) -> bool:
+    if is_intlike_lit(node):
+        return true
+    if is_list(node):
+        let t = tag(node)
+        return t == "str" or t == "flt"
+    return false
+
+fn bool_lit(node: dyn) -> str:
+    if node == "true":
+        return "true"
+    if node == "false":
+        return "false"
+    return ""
+
+fn to_int(s: str) -> int:
+    var start = 0
+    var neg = false
+    if s.chars()[0] == "-":
+        neg = true
+        start = 1
+    var n = 0
+    var i = start
+    while i < s.len():
+        n = n * 10 + digit(s.chars()[i])
+        i = i + 1
+    if neg:
+        return 0 - n
+    return n
+
+fn digit(c: str) -> int:
+    let ds = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    var i = 0
+    while i < 10:
+        if ds[i] == c:
+            return i
+        i = i + 1
+    return 0
+
+fn int_str(n: int) -> str:
+    if n == 0:
+        return "0"
+    var m = n
+    var neg = false
+    if m < 0:
+        neg = true
+        m = 0 - m
+    var s = ""
+    let ds = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    while m > 0:
+        s = ds[m % 10] + s
+        m = m / 10
+    if neg:
+        return "-" + s
+    return s
+
+fn as_int(node: dyn) -> int:
+    if node == "true":
+        return 1
+    if node == "false":
+        return 0
+    return to_int(node)
+
+# --- constant folding of int/bool binary ops (mirrors operations.binop) ---
+# Returns a folded literal node, or ["nofold"] when the operation can't be folded
+# to an int/bool literal in this representation.
+
+fn nofold() -> dyn:
+    return ["nofold"]
+
+fn is_fold(v: dyn) -> bool:
+    return not (is_list(v) and tag(v) == "nofold")
+
+fn fold_binop(op: str, left: dyn, right: dyn) -> dyn:
+    if not is_intlike_lit(left) or not is_intlike_lit(right):
+        return nofold()
+    let x = as_int(left)
+    let y = as_int(right)
+    if op == "+" or op == "-" or op == "/" or op == "%":
+        if left == "true" or left == "false" or right == "true" or right == "false":
+            return nofold()
+    if op == "+":
+        return int_str(x + y)
+    if op == "-":
+        return int_str(x - y)
+    if op == "*":
+        return int_str(x * y)
+    if op == "/":
+        if y == 0:
+            return nofold()
+        return int_str(x / y)
+    if op == "%":
+        if y == 0:
+            return nofold()
+        return int_str(x % y)
+    if op == "==":
+        return bool_str(x == y)
+    if op == "!=":
+        return bool_str(x != y)
+    if op == "<":
+        return cmp_same_kind(op, left, right, x < y)
+    if op == "<=":
+        return cmp_same_kind(op, left, right, x <= y)
+    if op == ">":
+        return cmp_same_kind(op, left, right, x > y)
+    if op == ">=":
+        return cmp_same_kind(op, left, right, x >= y)
+    return nofold()
+
+fn cmp_same_kind(op: str, left: dyn, right: dyn, result: bool) -> dyn:
+    let lb = left == "true" or left == "false"
+    let rb = right == "true" or right == "false"
+    if lb != rb:
+        return nofold()
+    return bool_str(result)
+
+fn bool_str(b: bool) -> str:
+    if b:
+        return "true"
+    return "false"
+
+# --- optimizer environment: list of [name, literalNode] ---
+
+fn env_get(env: dyn, name: str) -> dyn:
+    var i = env.len() - 1
+    while i >= 0:
+        if env[i][0] == name:
+            return env[i][1]
+        i = i - 1
+    return nofold()
+
+fn env_has(env: dyn, name: str) -> bool:
+    return is_fold(env_get(env, name))
+
+fn env_copy(env: dyn) -> dyn:
+    var out = []
+    for e in env:
+        out.push(e)
+    return out
+
+fn env_remove(env: dyn, name: str) -> dyn:
+    var out = []
+    for e in env:
+        if e[0] != name:
+            out.push(e)
+    return out
+
+# --- expression optimization ---
+
+fn opt_expr(node: dyn, env: dyn) -> dyn:
+    if is_atom(node):
+        if is_number_str(node) or node == "true" or node == "false" or node == "none":
+            return node
+        let v = env_get(env, node)
+        if is_fold(v):
+            return v
+        return node
+    let t = tag(node)
+    if t == "and" or t == "or":
+        return opt_logical(node, env)
+    if t == "==" or t == "!=" or t == "<" or t == "<=" or t == ">" or t == ">=" or t == "+" or t == "-" or t == "*" or t == "/" or t == "%":
+        return opt_binop(node, env)
+    if t == "neg" or t == "not":
+        return opt_unary(node, env)
+    if t == "ternary":
+        return opt_ternary(node, env)
+    if t == "cll":
+        return opt_call(node, env)
+    if t == "idx":
+        return ["idx", opt_expr(node[1], env), opt_expr(node[2], env)]
+    if t == "att":
+        return ["att", opt_expr(node[1], env), node[2]]
+    if t == "try":
+        return ["try", opt_expr(node[1], env)]
+    if t == "list":
+        return opt_seq("list", node, env)
+    if t == "tuple":
+        return opt_seq("tuple", node, env)
+    if t == "dict":
+        return opt_dict(node, env)
+    if t == "lam":
+        return opt_lambda(node, env)
+    return node
+
+fn opt_binop(node: dyn, env: dyn) -> dyn:
+    let op = node[0]
+    let left = opt_expr(node[1], env)
+    let right = opt_expr(node[2], env)
+    let folded = fold_binop(op, left, right)
+    if is_fold(folded):
+        return folded
+    # algebraic identities on integers
+    if (op == "+" or op == "-") and right == "0":
+        return left
+    if op == "+" and left == "0":
+        return right
+    if op == "*" and right == "1":
+        return left
+    if op == "*" and left == "1":
+        return right
+    return [op, left, right]
+
+fn opt_logical(node: dyn, env: dyn) -> dyn:
+    let op = node[0]
+    let left = opt_expr(node[1], env)
+    let right = opt_expr(node[2], env)
+    let lb = bool_lit(left)
+    if lb != "":
+        if op == "and":
+            if lb == "true":
+                return right
+            return left
+        if lb == "true":
+            return left
+        return right
+    return [op, left, right]
+
+fn opt_unary(node: dyn, env: dyn) -> dyn:
+    let op = node[0]
+    let operand = opt_expr(node[1], env)
+    if op == "neg" and is_int_lit(operand):
+        return int_str(0 - to_int(operand))
+    if op == "not":
+        let b = bool_lit(operand)
+        if b == "true":
+            return "false"
+        if b == "false":
+            return "true"
+    return [op, operand]
+
+fn opt_ternary(node: dyn, env: dyn) -> dyn:
+    let cond = opt_expr(node[1], env)
+    let b = bool_lit(cond)
+    if b == "true":
+        return opt_expr(node[2], env)
+    if b == "false":
+        return opt_expr(node[3], env)
+    return ["ternary", cond, opt_expr(node[2], env), opt_expr(node[3], env)]
+
+fn opt_call(node: dyn, env: dyn) -> dyn:
+    var out = ["cll", opt_expr(node[1], env)]
+    var i = 2
+    while i < node.len():
+        let arg = node[i]
+        if is_list(arg) and tag(arg) == "named":
+            out.push(["named", arg[1], opt_expr(arg[2], env)])
+        else:
+            out.push(opt_expr(arg, env))
+        i = i + 1
+    return out
+
+fn opt_seq(kind: str, node: dyn, env: dyn) -> dyn:
+    var out = [kind]
+    var i = 1
+    while i < node.len():
+        out.push(opt_expr(node[i], env))
+        i = i + 1
+    return out
+
+fn opt_dict(node: dyn, env: dyn) -> dyn:
+    var out = ["dict"]
+    var i = 1
+    while i < node.len():
+        let pair = node[i]
+        out.push(["pair", opt_expr(pair[1], env), opt_expr(pair[2], env)])
+        i = i + 1
+    return out
+
+fn opt_lambda(node: dyn, env: dyn) -> dyn:
+    var inner = env_copy(env)
+    let params = node[1]
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            let p = params[i]
+            if is_list(p):
+                inner = env_remove(inner, p[1])
+            i = i + 1
+    let body = node[2]
+    if is_list(body) and tag(body) == "block":
+        return ["lam", params, opt_block(body, inner)]
+    return ["lam", params, opt_expr(body, inner)]
+
+# --- statement / block optimization ---
+
+fn is_terminator(node: dyn) -> bool:
+    let t = tag(node)
+    return t == "ret" or t == "brk" or t == "cnt"
+
+fn opt_block(block: dyn, env: dyn) -> dyn:
+    var local = env_copy(env)
+    var out = ["block"]
+    var i = 1
+    while i < block.len():
+        let produced = opt_stmt(block[i], local)
+        for s in produced:
+            out.push(s)
+            if is_terminator(s):
+                return out
+        i = i + 1
+    return out
+
+fn opt_stmt(node: dyn, env: dyn) -> dyn:
+    let t = tag(node)
+    if t == "let":
+        let value = opt_expr(node[3], env)
+        bind_let(node[1], value, env)
+        return [["let", node[1], node[2], value]]
+    if t == "var":
+        let value = opt_expr(node[3], env)
+        remove_binding(node[1], env)
+        return [["var", node[1], node[2], value]]
+    if t == "asn":
+        let value = opt_expr(node[3], env)
+        let target = opt_expr(node[2], env)
+        return [["asn", node[1], target, value]]
+    if t == "ret":
+        if node.len() > 1:
+            return [["ret", opt_expr(node[1], env)]]
+        return [["ret"]]
+    if t == "defer":
+        return [["defer", opt_expr(node[1], env)]]
+    if t == "expr":
+        return [["expr", opt_expr(node[1], env)]]
+    if t == "if":
+        return opt_if(node, env)
+    if t == "while":
+        return opt_while(node, env)
+    if t == "for":
+        return opt_for(node, env)
+    if t == "with":
+        return opt_with(node, env)
+    if t == "match":
+        return opt_match(node, env)
+    return [node]
+
+fn bind_let(pat: dyn, value: dyn, env: dyn):
+    if is_atom(pat):
+        if is_literal(value):
+            env.push([pat, value])
+        else:
+            let cleaned = env_remove(env, pat)
+            reset_env(env, cleaned)
+    else:
+        remove_pattern(pat, env)
+
+fn reset_env(env: dyn, cleaned: dyn):
+    while env.len() > 0:
+        env.pop()
+    for e in cleaned:
+        env.push(e)
+
+fn remove_binding(name: str, env: dyn):
+    let cleaned = env_remove(env, name)
+    reset_env(env, cleaned)
+
+fn remove_pattern(pat: dyn, env: dyn):
+    if is_atom(pat):
+        remove_binding(pat, env)
+        return
+    let t = tag(pat)
+    if t == "vp":
+        var i = 2
+        while i < pat.len():
+            remove_pattern(pat[i], env)
+            i = i + 1
+    elif t == "tp":
+        var i = 1
+        while i < pat.len():
+            remove_pattern(pat[i], env)
+            i = i + 1
+
+fn opt_if(node: dyn, env: dyn) -> dyn:
+    let cond = opt_expr(node[1], env)
+    let b = bool_lit(cond)
+    if b == "true":
+        return block_stmts(opt_block(node[2], env))
+    if b == "false":
+        let elifs = node[3]
+        var idx = 0
+        while idx < elifs.len():
+            let e = elifs[idx]
+            let ec = opt_expr(e[1], env)
+            let eb = bool_lit(ec)
+            if eb == "true":
+                return block_stmts(opt_block(e[2], env))
+            if eb == "false":
+                idx = idx + 1
+            else:
+                return [build_if_from(node, idx, ec, env)]
+        if is_list(node[4]):
+            return block_stmts(opt_block(node[4], env))
+        return []
+    var new_elifs = ["_elifs"]
+    let elifs = node[3]
+    var i = 0
+    while i < elifs.len():
+        let e = elifs[i]
+        new_elifs.push(["elif", opt_expr(e[1], env), opt_block(e[2], env)])
+        i = i + 1
+    var orelse = "_"
+    if is_list(node[4]):
+        orelse = opt_block(node[4], env)
+    return [["if", cond, opt_block(node[2], env), tail(new_elifs), orelse]]
+
+fn build_if_from(node: dyn, idx: int, ec: dyn, env: dyn) -> dyn:
+    let elifs = node[3]
+    let first = elifs[idx]
+    var rest = ["_elifs"]
+    var j = idx + 1
+    while j < elifs.len():
+        let e = elifs[j]
+        rest.push(["elif", opt_expr(e[1], env), opt_block(e[2], env)])
+        j = j + 1
+    var orelse = "_"
+    if is_list(node[4]):
+        orelse = opt_block(node[4], env)
+    return ["if", ec, opt_block(first[2], env), tail(rest), orelse]
+
+fn tail(lst: dyn) -> dyn:
+    var out = []
+    var i = 1
+    while i < lst.len():
+        out.push(lst[i])
+        i = i + 1
+    return out
+
+fn block_stmts(block: dyn) -> dyn:
+    var out = []
+    var i = 1
+    while i < block.len():
+        out.push(block[i])
+        i = i + 1
+    return out
+
+fn opt_while(node: dyn, env: dyn) -> dyn:
+    let cond = opt_expr(node[1], env)
+    if bool_lit(cond) == "false":
+        return []
+    return [["while", cond, opt_block(node[2], env)]]
+
+fn opt_for(node: dyn, env: dyn) -> dyn:
+    let it = opt_expr(node[2], env)
+    var inner = env_copy(env)
+    remove_pattern(node[1], inner)
+    return [["for", node[1], it, opt_block(node[3], inner)]]
+
+fn opt_with(node: dyn, env: dyn) -> dyn:
+    let e = opt_expr(node[1], env)
+    var inner = env_copy(env)
+    if node[2] != "_":
+        inner = env_remove(inner, node[2])
+    return [["with", e, node[2], opt_block(node[3], inner)]]
+
+fn opt_match(node: dyn, env: dyn) -> dyn:
+    var out = ["match", opt_expr(node[1], env)]
+    var i = 2
+    while i < node.len():
+        let arm = node[i]
+        var inner = env_copy(env)
+        remove_pattern(arm[1], inner)
+        var guard = "_"
+        if arm[2] != "_":
+            guard = opt_expr(arm[2], inner)
+        var body = arm[3]
+        if is_list(body) and tag(body) == "block":
+            body = opt_block(body, inner)
+        else:
+            body = opt_expr(body, inner)
+        out.push(["arm", arm[1], guard, body])
+        i = i + 1
+    return [out]
+
+# --- module ---
+
+fn optimize(module: dyn) -> dyn:
+    var consts = []
+    var out = []
+    for decl in module:
+        let t = tag(decl)
+        if t == "const":
+            let value = opt_expr(decl[3], consts)
+            if is_literal(value):
+                consts.push([decl[1], value])
+            out.push(["const", decl[1], decl[2], value])
+        else:
+            out.push(decl)
+    var result = []
+    for decl in out:
+        let t = tag(decl)
+        if t == "fn":
+            result.push(opt_function(decl, consts))
+        elif t == "impl":
+            result.push(opt_impl(decl, consts))
+        else:
+            result.push(decl)
+    return result
+
+fn opt_function(decl: dyn, consts: dyn) -> dyn:
+    var env = env_copy(consts)
+    let params = decl[4]
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            let p = params[i]
+            if is_list(p):
+                env = env_remove(env, p[1])
+            i = i + 1
+    return ["fn", decl[1], decl[2], decl[3], decl[4], decl[5], opt_block(decl[6], env)]
+
+fn opt_impl(decl: dyn, consts: dyn) -> dyn:
+    var methods = ["_m"]
+    let ms = decl[4]
+    if is_list(ms):
+        var i = 0
+        while i < ms.len():
+            let m = ms[i]
+            if is_list(m) and tag(m) == "fn":
+                methods.push(opt_function(m, consts))
+            else:
+                methods.push(m)
+            i = i + 1
+    return ["impl", decl[1], decl[2], decl[3], tail(methods)]
+
+fn main():
+    match fs.read("tree.sexpr"):
+        Ok(text) => run_optimizer(text)
+        Err(e) => print("error: ${e}")
+
+fn run_optimizer(text: str):
+    var module = []
+    for line in text.split("\n"):
+        if line.trim() != "":
+            module.push(read_sexpr(line))
+    let optimized = optimize(module)
+    for decl in optimized:
+        print(render(decl))
