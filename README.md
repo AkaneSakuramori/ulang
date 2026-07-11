@@ -6,7 +6,7 @@ Ulang is a compiled, statically-typed programming language with type inference,
 structured concurrency, and a clean, readable syntax. It compiles to native code,
 runs without a global interpreter lock, and treats errors as values.
 
-> Status: **1.6.0** — cross-platform (Linux/macOS/Windows), optimizing compiler, garbage collector, package manager, LSP, and self-hosting in progress.
+> Status: **1.7.0** — self-hosting in progress (lexer + expression parser), cross-platform, optimizing compiler, garbage collector, package manager, and LSP.
 
 ## Features
 
@@ -107,17 +107,24 @@ Run them with `python3 bench/benchmark.py`.
 
 ## Self-hosting
 
-Ulang is progressing toward a self-hosted compiler — one written in Ulang itself. The
-current milestone is a **complete lexer written in Ulang** (`selfhost/lexer.ul`) whose
-token stream is verified, by conformance tests, to match the reference lexer exactly
-across keywords, identifiers, numbers, strings, comments, and operators.
+Ulang is progressing toward a self-hosted compiler — one written in Ulang itself. Each
+stage is kept correct and testable, and validated against the Python reference before the
+next begins.
+
+Milestones so far:
+
+1. **Lexer** (`selfhost/lexer.ul`) — its token stream is verified to match the reference
+   lexer across keywords, identifiers, numbers, strings, comments, and operators.
+2. **Expression parser** (`selfhost/expr_parser.ul`) — a precedence-climbing parser that
+   emits a canonical AST (as S-expressions), verified against the reference parser's AST
+   across operator precedence, associativity, unary and postfix operators, calls, indexing,
+   attribute access, list literals, and ternaries.
 
 ```sh
-ulang run selfhost/lexer.ul      # tokenizes an input.ul in the current directory
+ulang run selfhost/lexer.ul          # tokenizes input.ul in the current directory
+echo "1 + 2 * 3" > input.txt
+ulang run selfhost/expr_parser.ul    # => (+ 1 (* 2 3))
 ```
-
-`selfhost/tokenize.ul` is an earlier, simpler demonstration. Each self-hosting stage is
-kept correct and testable before the next begins.
 
 ## Optimizations
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.7.0
+
+### Added
+- Self-hosting: an **expression parser written in Ulang** (`selfhost/expr_parser.ul`),
+  the next compiler stage after the self-hosted lexer. It is a precedence-climbing parser
+  producing a canonical AST (serialized as S-expressions) covering operator precedence and
+  associativity, unary and postfix operators, function calls, indexing, attribute access,
+  list literals, and ternaries.
+- `test_selfhost_parser.py` validates the Ulang parser's AST against the Python reference
+  parser across a 28-expression corpus, guaranteeing identical structure.
+
+### Notes
+- Implementing the parser in Ulang required no new language features, confirming the core
+  language is sufficient for real compiler work. It exercises structs (as mutable parser
+  state), lists, string operations, and recursion.
+
 ## 1.6.0
 
 ### Added
