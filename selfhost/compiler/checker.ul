@@ -1,0 +1,810 @@
+import fs
+
+fn read_sexpr(text: str) -> dyn:
+    let chars = text.chars()
+    let state = [chars, chars.len(), 0]
+    return parse_node(state)
+
+fn cur(state: dyn) -> str:
+    if state[2] >= state[1]:
+        return ""
+    return state[0][state[2]]
+
+fn parse_node(state: dyn) -> dyn:
+    skip_ws(state)
+    if cur(state) == "(":
+        state[2] = state[2] + 1
+        var items = []
+        while true:
+            skip_ws(state)
+            if cur(state) == ")":
+                state[2] = state[2] + 1
+                return items
+            if cur(state) == "":
+                return items
+            items.push(parse_node(state))
+        return items
+    return parse_atom(state)
+
+fn parse_atom(state: dyn) -> str:
+    var s = ""
+    while state[2] < state[1]:
+        let c = state[0][state[2]]
+        if c == " " or c == "(" or c == ")":
+            break
+        s += c
+        state[2] = state[2] + 1
+    return s
+
+fn skip_ws(state: dyn):
+    while state[2] < state[1] and state[0][state[2]] == " ":
+        state[2] = state[2] + 1
+
+fn is_atom(node: dyn) -> bool:
+    return not is_list(node)
+
+fn tag(node: dyn) -> str:
+    if is_list(node):
+        if node.len() == 0:
+            return ""
+        return node[0]
+    return node
+
+# Types are encoded as strings:
+#   int, float, bool, str, unit                  primitives
+#   %dyn                                          the dynamic escape (compatible with all)
+#   dyn                                           a nominal type literally named "dyn"
+#   [T]                                           list
+#   {K: V}                                        dict
+#   (A, B)                                        tuple
+#   Name  /  Name[A, B]                           named / generic
+#   T?                                            optional
+#   ?N                                            inference variable
+#   fn(A) -> R                                    function
+
+type Ctx:
+    consts: dyn
+    functions: dyn
+    types: dyn
+    variants: dyn
+    fields: dyn
+    var_counter: int
+    errors: dyn
+
+fn builtin_fn(name: str) -> str:
+    if name == "print" or name == "panic":
+        return "fn(%dyn) -> unit"
+    if name == "len" or name == "int":
+        return "fn(%dyn) -> int"
+    if name == "range":
+        return "fn(int, int) -> [int]"
+    if name == "float":
+        return "fn(%dyn) -> float"
+    if name == "str":
+        return "fn(%dyn) -> str"
+    if name == "bool":
+        return "fn(%dyn) -> bool"
+    if name == "abs" or name == "min" or name == "max" or name == "sum":
+        return "fn(%dyn) -> %dyn"
+    if name == "gc_collect" or name == "gc_alloc_count" or name == "gc_live_count":
+        return "fn() -> int"
+    if name == "is_list" or name == "is_str":
+        return "fn(%dyn) -> bool"
+    if name == "spawn" or name == "channel" or name == "nursery":
+        return "fn() -> %dyn"
+    if name == "sleep":
+        return "fn(int) -> unit"
+    if name == "assert":
+        return "fn(bool) -> unit"
+    if name == "assert_eq":
+        return "fn(%dyn, %dyn) -> unit"
+    return ""
+
+fn is_builtin(name: str) -> bool:
+    if name == "Some" or name == "None" or name == "Ok" or name == "Err":
+        return true
+    if name == "gc_enable" or name == "gc_disable":
+        return true
+    return builtin_fn(name) != ""
+
+# --- type resolution: syntax-tree type node -> canonical type string ---
+
+fn resolve_type(node: dyn) -> str:
+    if is_atom(node):
+        if node == "int" or node == "float" or node == "bool" or node == "str":
+            return node
+        return node
+    let t = tag(node)
+    if t == "ltt":
+        return "[${resolve_type(node[1])}]"
+    if t == "dtt":
+        return "{${resolve_type(node[1])}: ${resolve_type(node[2])}}"
+    if t == "ttt":
+        return tuple_type(node)
+    if t == "fnt":
+        return fn_type(node)
+    if t == "optt":
+        return "${resolve_type(node[1])}?"
+    if t == "gent":
+        return gen_type(node)
+    return "%dyn"
+
+fn tuple_type(node: dyn) -> str:
+    var s = "("
+    var i = 1
+    while i < node.len():
+        if i > 1:
+            s += ", "
+        s += resolve_type(node[i])
+        i = i + 1
+    s += ")"
+    return s
+
+fn fn_type(node: dyn) -> str:
+    let params = node[1]
+    var s = "fn("
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            if i > 1:
+                s += ", "
+            s += resolve_type(params[i])
+            i = i + 1
+    s += ") -> ${resolve_type(node[2])}"
+    return s
+
+fn gen_type(node: dyn) -> str:
+    var s = "${node[1]}["
+    var i = 2
+    while i < node.len():
+        if i > 2:
+            s += ", "
+        s += resolve_type(node[i])
+        i = i + 1
+    s += "]"
+    return s
+
+# --- declaration collection ---
+
+fn collect(module: dyn) -> Ctx:
+    let ctx = Ctx([], [], [], [], [], 0, [])
+    for decl in module:
+        let t = tag(decl)
+        if t == "fn":
+            ctx.functions.push([decl[2], fn_sig(decl)])
+        elif t == "extern":
+            ctx.functions.push([decl[1], extern_sig(decl)])
+        elif t == "type":
+            collect_type(ctx, decl)
+        elif t == "enum":
+            collect_enum(ctx, decl)
+        elif t == "const":
+            ctx.consts.push(decl[1])
+        elif t == "import":
+            collect_import(ctx, decl)
+    return ctx
+
+fn collect_import(ctx: Ctx, decl: dyn):
+    let alias = decl[2]
+    if alias != "_":
+        ctx.consts.push(alias)
+    let namelist = decl[3]
+    if is_list(namelist):
+        var i = 1
+        while i < namelist.len():
+            ctx.consts.push(namelist[i])
+            i = i + 1
+    if not is_list(namelist) and alias == "_":
+        let path = decl[1]
+        if is_list(path):
+            ctx.consts.push(path[path.len() - 1])
+
+fn fn_sig(decl: dyn) -> str:
+    let params = decl[4]
+    var s = "fn("
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            if i > 1:
+                s += ", "
+            s += param_type(params[i])
+            i = i + 1
+    s += ") -> ${ret_type(decl[5])}"
+    return s
+
+fn extern_sig(decl: dyn) -> str:
+    let params = decl[2]
+    var s = "fn("
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            if i > 1:
+                s += ", "
+            s += param_type(params[i])
+            i = i + 1
+    s += ") -> ${ret_type(decl[3])}"
+    return s
+
+fn param_type(p: dyn) -> str:
+    if p[2] == "_":
+        return "%dyn"
+    return resolve_type(p[2])
+
+fn ret_type(node: dyn) -> str:
+    if node == "_":
+        return "unit"
+    return resolve_type(node)
+
+fn collect_type(ctx: Ctx, decl: dyn):
+    let name = decl[2]
+    let fieldlist = decl[4]
+    var flds = []
+    if is_list(fieldlist):
+        for f in fieldlist:
+            if is_list(f):
+                flds.push([f[1], resolve_type(f[2])])
+    ctx.types.push([name, flds])
+
+fn collect_enum(ctx: Ctx, decl: dyn):
+    let name = decl[2]
+    let variants = decl[4]
+    if is_list(variants):
+        for v in variants:
+            if is_list(v):
+                var types = []
+                var i = 2
+                while i < v.len():
+                    types.push(resolve_type(v[i]))
+                    i = i + 1
+                ctx.variants.push([v[1], name, types])
+
+# --- lookup helpers ---
+
+fn lookup(pairs: dyn, name: str) -> dyn:
+    for pair in pairs:
+        if pair[0] == name:
+            return pair
+    return []
+
+fn scope_get(scope: dyn, name: str) -> str:
+    var i = scope.len() - 1
+    while i >= 0:
+        if scope[i][0] == name:
+            return scope[i][1]
+        i = i - 1
+    return ""
+
+fn scope_has(scope: dyn, name: str) -> bool:
+    var i = scope.len() - 1
+    while i >= 0:
+        if scope[i][0] == name:
+            return true
+        i = i - 1
+    return false
+
+fn fresh_var(ctx: Ctx) -> str:
+    ctx.var_counter = ctx.var_counter + 1
+    return "?${ctx.var_counter}"
+
+# --- checking ---
+
+fn check_module(module: dyn) -> dyn:
+    let ctx = collect(module)
+    for decl in module:
+        let t = tag(decl)
+        if t == "fn":
+            check_function(ctx, decl)
+        elif t == "impl":
+            check_impl(ctx, decl)
+        elif t == "const":
+            infer(ctx, decl[3], [])
+    return ctx.errors
+
+fn check_impl(ctx: Ctx, decl: dyn):
+    let methods = decl[4]
+    if is_list(methods):
+        for m in methods:
+            if is_list(m) and tag(m) == "fn":
+                check_function(ctx, m)
+
+fn check_function(ctx: Ctx, decl: dyn):
+    var scope = []
+    let params = decl[4]
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            let p = params[i]
+            if is_list(p):
+                scope.push([p[1], param_type(p)])
+            i = i + 1
+    check_block(ctx, decl[6], scope)
+
+fn check_block(ctx: Ctx, block: dyn, outer: dyn):
+    var scope = copy_scope(outer)
+    if not is_list(block):
+        return
+    var i = 1
+    while i < block.len():
+        check_stmt(ctx, block[i], scope)
+        i = i + 1
+
+fn copy_scope(s: dyn) -> dyn:
+    var out = []
+    for x in s:
+        out.push(x)
+    return out
+
+fn check_stmt(ctx: Ctx, node: dyn, scope: dyn):
+    let t = tag(node)
+    if t == "let":
+        check_let(ctx, node, scope)
+    elif t == "var":
+        check_var(ctx, node, scope)
+    elif t == "asn":
+        infer(ctx, node[3], scope)
+        infer(ctx, node[2], scope)
+    elif t == "ret":
+        if node.len() > 1:
+            infer(ctx, node[1], scope)
+    elif t == "expr":
+        infer(ctx, node[1], scope)
+    elif t == "defer":
+        infer(ctx, node[1], scope)
+    elif t == "if":
+        check_if(ctx, node, scope)
+    elif t == "while":
+        infer(ctx, node[1], scope)
+        check_block(ctx, node[2], scope)
+    elif t == "for":
+        check_for(ctx, node, scope)
+    elif t == "with":
+        check_with(ctx, node, scope)
+    elif t == "match":
+        check_match(ctx, node, scope)
+
+fn check_let(ctx: Ctx, node: dyn, scope: dyn):
+    let vtype = infer(ctx, node[3], scope)
+    var bound = vtype
+    if node[2] != "_":
+        let declared = resolve_type(node[2])
+        if not compatible(declared, vtype):
+            ctx.errors.push("type mismatch: expected ${declared}, got ${vtype}")
+        bound = declared
+    bind_pattern(node[1], bound, scope)
+
+fn check_var(ctx: Ctx, node: dyn, scope: dyn):
+    let vtype = infer(ctx, node[3], scope)
+    var bound = vtype
+    if node[2] != "_":
+        bound = resolve_type(node[2])
+    scope.push([node[1], bound])
+
+fn check_if(ctx: Ctx, node: dyn, scope: dyn):
+    infer(ctx, node[1], scope)
+    check_block(ctx, node[2], scope)
+    let elifs = node[3]
+    if is_list(elifs):
+        var i = 1
+        while i < elifs.len():
+            let e = elifs[i]
+            infer(ctx, e[1], scope)
+            check_block(ctx, e[2], scope)
+            i = i + 1
+    if is_list(node[4]):
+        check_block(ctx, node[4], scope)
+
+fn check_for(ctx: Ctx, node: dyn, scope: dyn):
+    let it = infer(ctx, node[2], scope)
+    var inner = copy_scope(scope)
+    bind_pattern_type(node[1], elem_type(it), inner)
+    check_block(ctx, node[3], inner)
+
+fn elem_type(t: str) -> str:
+    if t.len() >= 2 and t.chars()[0] == "[":
+        return substring(t, 1, t.len() - 1)
+    return "%dyn"
+
+fn substring(s: str, a: int, b: int) -> str:
+    let cs = s.chars()
+    var out = ""
+    var i = a
+    while i < b:
+        out += cs[i]
+        i = i + 1
+    return out
+
+fn check_with(ctx: Ctx, node: dyn, scope: dyn):
+    let t = infer(ctx, node[1], scope)
+    var inner = copy_scope(scope)
+    if node[2] != "_":
+        inner.push([node[2], t])
+    check_block(ctx, node[3], inner)
+
+fn check_match(ctx: Ctx, node: dyn, scope: dyn):
+    infer(ctx, node[1], scope)
+    var i = 2
+    while i < node.len():
+        let arm = node[i]
+        var inner = copy_scope(scope)
+        bind_pattern(arm[1], "%dyn", inner)
+        if arm[2] != "_":
+            infer(ctx, arm[2], inner)
+        let body = arm[3]
+        if is_list(body) and tag(body) == "block":
+            check_block(ctx, body, inner)
+        else:
+            infer(ctx, body, inner)
+        i = i + 1
+
+fn bind_pattern(pat: dyn, ty: str, scope: dyn):
+    bind_pattern_type(pat, ty, scope)
+
+fn bind_pattern_type(pat: dyn, ty: str, scope: dyn):
+    if is_atom(pat):
+        if pat != "_":
+            scope.push([pat, ty])
+        return
+    let t = tag(pat)
+    if t == "vp":
+        var i = 2
+        while i < pat.len():
+            bind_pattern_type(pat[i], "%dyn", scope)
+            i = i + 1
+    elif t == "tp":
+        var i = 1
+        while i < pat.len():
+            bind_pattern_type(pat[i], "%dyn", scope)
+            i = i + 1
+
+# --- inference ---
+
+fn is_number_str(s: str) -> bool:
+    if s.len() == 0:
+        return false
+    for c in s.chars():
+        if not (c >= "0" and c <= "9"):
+            return false
+    return true
+
+fn infer(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    if is_atom(node):
+        return infer_atom(ctx, node, scope)
+    let t = tag(node)
+    if t == "str":
+        return "str"
+    if t == "flt":
+        return "float"
+    if t == "cll":
+        return infer_call(ctx, node, scope)
+    if t == "idx":
+        return infer_index(ctx, node, scope)
+    if t == "att":
+        return infer_attr(ctx, node, scope)
+    if t == "try":
+        return infer_try(ctx, node, scope)
+    if t == "neg":
+        return infer(ctx, node[1], scope)
+    if t == "not":
+        infer(ctx, node[1], scope)
+        return "bool"
+    if t == "and" or t == "or":
+        infer(ctx, node[1], scope)
+        infer(ctx, node[2], scope)
+        return "bool"
+    if t == "==" or t == "!=" or t == "<" or t == "<=" or t == ">" or t == ">=":
+        infer(ctx, node[1], scope)
+        infer(ctx, node[2], scope)
+        return "bool"
+    if t == "+" or t == "-" or t == "*" or t == "/" or t == "%":
+        return infer_arith(ctx, node, scope)
+    if t == "ternary":
+        infer(ctx, node[1], scope)
+        let then = infer(ctx, node[2], scope)
+        infer(ctx, node[3], scope)
+        return then
+    if t == "list":
+        return infer_list(ctx, node, scope)
+    if t == "dict":
+        return infer_dict(ctx, node, scope)
+    if t == "tuple":
+        return infer_tuple(ctx, node, scope)
+    if t == "lam":
+        return infer_lambda(ctx, node, scope)
+    return "%dyn"
+
+fn infer_atom(ctx: Ctx, node: str, scope: dyn) -> str:
+    if is_number_str(node):
+        return "int"
+    if node == "true" or node == "false":
+        return "bool"
+    if node == "none":
+        return "Option[${fresh_var(ctx)}]"
+    let s = scope_get(scope, node)
+    if s != "":
+        return s
+    if scope_has(scope, node):
+        return ""
+    if contains_str(ctx.consts, node):
+        return "%dyn"
+    let f = lookup(ctx.functions, node)
+    if f.len() > 0:
+        return f[1]
+    if is_builtin(node):
+        let bf = builtin_fn(node)
+        if bf != "":
+            return bf
+        return "%dyn"
+    let ty = lookup(ctx.types, node)
+    if ty.len() > 0:
+        return type_ctor(ty, node)
+    let vt = lookup(ctx.variants, node)
+    if vt.len() > 0:
+        return variant_ctor(vt)
+    ctx.errors.push("undefined name '${node}'")
+    return "%dyn"
+
+fn contains_str(xs: dyn, name: str) -> bool:
+    for x in xs:
+        if x == name:
+            return true
+    return false
+
+fn type_ctor(ty: dyn, name: str) -> str:
+    let flds = ty[1]
+    var s = "fn("
+    var i = 0
+    while i < flds.len():
+        if i > 0:
+            s += ", "
+        s += flds[i][1]
+        i = i + 1
+    s += ") -> ${name}"
+    return s
+
+fn variant_ctor(vt: dyn) -> str:
+    let enum_name = vt[1]
+    let types = vt[2]
+    if types.len() == 0:
+        return enum_name
+    var s = "fn("
+    var i = 0
+    while i < types.len():
+        if i > 0:
+            s += ", "
+        s += types[i]
+        i = i + 1
+    s += ") -> ${enum_name}"
+    return s
+
+fn infer_call(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    let ft = infer(ctx, node[1], scope)
+    var i = 2
+    while i < node.len():
+        infer_arg(ctx, node[i], scope)
+        i = i + 1
+    return fn_return(ft)
+
+fn infer_arg(ctx: Ctx, node: dyn, scope: dyn):
+    if is_list(node) and tag(node) == "named":
+        infer(ctx, node[2], scope)
+    else:
+        infer(ctx, node, scope)
+
+fn fn_return(ft: str) -> str:
+    let idx = find_arrow(ft)
+    if idx < 0:
+        return "%dyn"
+    return substring(ft, idx + 4, ft.len())
+
+fn find_arrow(s: str) -> int:
+    let cs = s.chars()
+    var i = 0
+    while i + 3 < s.len():
+        if cs[i] == " " and cs[i + 1] == "-" and cs[i + 2] == ">" and cs[i + 3] == " ":
+            return i
+        i = i + 1
+    return -1
+
+fn infer_index(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    let t = infer(ctx, node[1], scope)
+    infer(ctx, node[2], scope)
+    if t.len() >= 2 and t.chars()[0] == "[":
+        return substring(t, 1, t.len() - 1)
+    return dict_value(t)
+
+fn dict_value(t: str) -> str:
+    if t.len() >= 2 and t.chars()[0] == "{":
+        let idx = find_colon(t)
+        if idx >= 0:
+            return substring(t, idx + 2, t.len() - 1)
+    return "%dyn"
+
+fn find_colon(s: str) -> int:
+    let cs = s.chars()
+    var i = 0
+    while i < s.len():
+        if cs[i] == ":":
+            return i
+        i = i + 1
+    return -1
+
+fn infer_attr(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    let t = infer(ctx, node[1], scope)
+    let ty = lookup(ctx.types, t)
+    if ty.len() > 0:
+        let flds = ty[1]
+        for f in flds:
+            if f[0] == node[2]:
+                return f[1]
+    return "%dyn"
+
+fn infer_try(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    let t = infer(ctx, node[1], scope)
+    let inner = generic_first_arg(t)
+    if inner != "":
+        return inner
+    if t.len() >= 1 and t.chars()[t.len() - 1] == "?":
+        return substring(t, 0, t.len() - 1)
+    return "%dyn"
+
+fn generic_first_arg(t: str) -> str:
+    if starts_with_gen(t, "Option[") or starts_with_gen(t, "Result["):
+        let open = find_bracket(t)
+        return first_arg(t, open)
+    return ""
+
+fn starts_with_gen(t: str, prefix: str) -> bool:
+    if t.len() < prefix.len():
+        return false
+    let tc = t.chars()
+    let pc = prefix.chars()
+    var i = 0
+    while i < prefix.len():
+        if tc[i] != pc[i]:
+            return false
+        i = i + 1
+    return true
+
+fn find_bracket(s: str) -> int:
+    let cs = s.chars()
+    var i = 0
+    while i < s.len():
+        if cs[i] == "[":
+            return i
+        i = i + 1
+    return -1
+
+fn first_arg(t: str, open: int) -> str:
+    let cs = t.chars()
+    var depth = 0
+    var i = open + 1
+    var out = ""
+    while i < t.len():
+        let c = cs[i]
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            if depth == 0:
+                return out
+            depth -= 1
+        elif c == "," and depth == 0:
+            return out
+        out += c
+        i = i + 1
+    return out
+
+fn infer_arith(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    let left = infer(ctx, node[1], scope)
+    let right = infer(ctx, node[2], scope)
+    if left == "%dyn" and right == "%dyn":
+        return "%dyn"
+    if left == "%dyn":
+        return right
+    if right == "%dyn":
+        return left
+    if left == right:
+        return left
+    if (left == "int" and right == "float") or (left == "float" and right == "int"):
+        return "float"
+    return left
+
+fn infer_list(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    if node.len() == 1:
+        return "[${fresh_var(ctx)}]"
+    let first = infer(ctx, node[1], scope)
+    var i = 2
+    while i < node.len():
+        infer(ctx, node[i], scope)
+        i = i + 1
+    return "[${first}]"
+
+fn infer_dict(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    if node.len() == 1:
+        let k = fresh_var(ctx)
+        let v = fresh_var(ctx)
+        return "{${k}: ${v}}"
+    let p0 = node[1]
+    let k = infer(ctx, p0[1], scope)
+    let v = infer(ctx, p0[2], scope)
+    var i = 2
+    while i < node.len():
+        let p = node[i]
+        infer(ctx, p[1], scope)
+        infer(ctx, p[2], scope)
+        i = i + 1
+    return "{${k}: ${v}}"
+
+fn infer_tuple(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    var s = "("
+    var i = 1
+    while i < node.len():
+        if i > 1:
+            s += ", "
+        s += infer(ctx, node[i], scope)
+        i = i + 1
+    s += ")"
+    return s
+
+fn infer_lambda(ctx: Ctx, node: dyn, scope: dyn) -> str:
+    var inner = copy_scope(scope)
+    let params = node[1]
+    var ptypes = []
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            let p = params[i]
+            if is_list(p):
+                let pt = param_type(p)
+                inner.push([p[1], pt])
+                ptypes.push(pt)
+            i = i + 1
+    let body = node[2]
+    var ret = "%dyn"
+    if is_list(body) and tag(body) == "block":
+        check_block(ctx, body, inner)
+    else:
+        ret = infer(ctx, body, inner)
+    var s = "fn("
+    var i = 0
+    while i < ptypes.len():
+        if i > 0:
+            s += ", "
+        s += ptypes[i]
+        i = i + 1
+    s += ") -> ${ret}"
+    return s
+
+# --- compatibility (mirrors reference compatible()) ---
+
+fn compatible(expected: str, got: str) -> bool:
+    if expected == "%dyn" or got == "%dyn":
+        return true
+    if is_var(expected) or is_var(got):
+        return true
+    if expected.len() >= 1 and expected.chars()[expected.len() - 1] == "?":
+        let inner = substring(expected, 0, expected.len() - 1)
+        if starts_with_gen(got, "Option["):
+            return true
+        return compatible(inner, got)
+    if starts_with_gen(expected, "Option["):
+        return true
+    if expected.len() >= 2 and expected.chars()[0] == "[" and got.len() >= 2 and got.chars()[0] == "[":
+        return compatible(substring(expected, 1, expected.len() - 1), substring(got, 1, got.len() - 1))
+    return expected == got
+
+fn is_var(t: str) -> bool:
+    return t.len() >= 1 and t.chars()[0] == "?"
+
+fn main():
+    match fs.read("tree.sexpr"):
+        Ok(text) => run_checker(text)
+        Err(e) => print("error: ${e}")
+
+fn run_checker(text: str):
+    var module = []
+    for line in text.split("\n"):
+        if line.trim() != "":
+            module.push(read_sexpr(line))
+    let errors = check_module(module)
+    for e in errors:
+        print(e)

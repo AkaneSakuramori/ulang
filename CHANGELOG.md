@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.8.3
+
+### Added
+- **Self-hosting Stage 2 — type inference and type checking**
+  (`selfhost/compiler/checker.ul`). The self-hosted semantic analyzer now performs name
+  resolution and type checking in a single pass, mirroring the reference `src/checker.py`:
+  type inference for every expression form, resolution of declared type annotations,
+  type-mismatch detection, function/method/constructor typing, struct field typing,
+  generic and optional handling, `try`/index/attribute typing, and constant handling.
+  It produces the same diagnostics in the same order as the reference.
+- Validated identical to the reference (`tests/test_selfhost_checker.py`) across a
+  type-checking corpus, name-resolution/scope scenarios, all 23 example programs, and 40
+  randomly generated typed programs. Inference-variable numbers (`?N`), which come from a
+  global counter in the reference, are normalized structurally in the comparison.
+
+### Changed
+- Consolidated the self-hosted semantic analysis into a single `checker.ul`, replacing the
+  separate `resolver.ul` from the previous release. This matches the reference's unified
+  checker and keeps the self-hosted compiler clean (one component per compiler stage). The
+  checker subsumes all of the resolver's name-resolution behavior, verified by the scope
+  coverage now included in the checker's test.
+
 ## 1.8.2
 
 ### Changed

@@ -13,7 +13,7 @@ Files are named by compiler responsibility, not by development milestone:
 compiler/
   lexer.ul       source text  -> token stream (with significant-indentation layout)
   parser.ul      token stream -> syntax tree
-  resolver.ul    syntax tree  -> name-resolution diagnostics (scopes, undefined names)
+  checker.ul     syntax tree  -> semantic diagnostics (name resolution + type checking)
 ```
 
 Later stages (the rest of semantic analysis, then optimization and code generation) are
@@ -26,9 +26,13 @@ added here as they are completed and validated.
   to the reference lexer and parser across all example programs and a stress corpus
   (`tests/test_selfhost_lexer.py`, `tests/test_selfhost_parser.py`).
 - **Stage 2 — Semantic analysis: in progress.**
-  - Name resolution (`resolver.ul`): symbol and scope management, and undefined-name
-    diagnostics, verified identical to the reference across scope scenarios and all
-    example programs (`tests/test_selfhost_resolver.py`).
+  - Name resolution and type checking (`checker.ul`): symbol and scope management,
+    undefined-name detection, type inference, and type-mismatch diagnostics, in a single
+    walk mirroring the reference `src/checker.py`. Verified identical to the reference —
+    same diagnostics in the same order — across a type-checking corpus, all example
+    programs, and randomly generated typed programs (`tests/test_selfhost_checker.py`).
+    Remaining Stage-2 subsystems: pattern validation, exhaustiveness checking, visibility
+    analysis, and constant evaluation.
 - **Stage 3 — Optimization and code generation: not started.**
 
 ## Running
@@ -41,7 +45,7 @@ ulang run selfhost/compiler/lexer.ul     # print the token stream
 ulang run selfhost/compiler/parser.ul    # print the syntax tree as S-expressions
 
 ulang run selfhost/compiler/parser.ul > tree.sexpr
-ulang run selfhost/compiler/resolver.ul  # print name-resolution diagnostics
+ulang run selfhost/compiler/checker.ul   # print semantic diagnostics
 ```
 
 ## Validation approach
