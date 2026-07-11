@@ -1,3 +1,4 @@
+import os
 import ast_nodes as ast
 import values as V
 from values import Struct, Variant, Closure, Builtin, BoundMethod, some, ok, err, NONE, ulang_str
@@ -85,6 +86,12 @@ class Interpreter:
             raise
 
     def collect(self, module):
+        self._collect(module, run_imports=True)
+
+    def collect_library(self, module):
+        self._collect(module, run_imports=True)
+
+    def _collect(self, module, run_imports=True):
         for decl in module.body:
             if isinstance(decl, ast.Function):
                 closure = Closure(decl.params, decl.body, self.globals, decl.name)
@@ -104,7 +111,8 @@ class Interpreter:
             elif isinstance(decl, ast.TraitDecl):
                 self.traits[decl.name] = decl
             elif isinstance(decl, ast.Import):
-                self.exec_import(decl)
+                if run_imports:
+                    self.exec_import(decl)
             elif isinstance(decl, ast.ExternFn):
                 self.register_extern(decl)
 
@@ -119,6 +127,8 @@ class Interpreter:
         name = decl.path[-1]
         module = stdlib.get_module(name)
         if module is None:
+            module = self._load_package_module(name)
+        if module is None:
             return
         if decl.names is not None:
             for member in decl.names:
@@ -127,6 +137,14 @@ class Interpreter:
         else:
             bind = decl.alias if decl.alias else name
             self.globals.set(bind, module)
+
+    def _load_package_module(self, name):
+        import loader
+        roots = getattr(self, "search_roots", None) or [os.getcwd()]
+        try:
+            return loader.load_package(name, roots, type(self))
+        except Exception:
+            return None
 
     def register_impl(self, decl):
         type_name = self.type_name_of(decl.type)

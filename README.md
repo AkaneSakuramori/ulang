@@ -20,6 +20,7 @@ runs without a global interpreter lock, and treats errors as values.
 - C FFI: call native libraries directly with `extern fn`.
 - Four execution engines: interpreter, bytecode VM, tiered JIT, and native (LLVM).
 - Editor support via a built-in Language Server (`ulang lsp`).
+- Package manager with reproducible builds and verified downloads (`ulang install`).
 - Tooling: formatter, project scaffolding, and a standard library.
 
 ## Example
@@ -120,14 +121,19 @@ Modules available via `import`: `fs`, `json`, `math`, `time`, `str`, `random`, `
 
 ```sh
 ulang init myapp          # scaffold a project (ulang.toml + src/main.ul)
+ulang add greeter         # add a dependency and install it
+ulang install             # install dependencies from the lockfile
+ulang update              # re-resolve to the newest allowed versions
+ulang publish             # publish the current package to the registry
+ulang search json         # search the registry
 ulang fmt file.ul         # print canonical formatting
 ulang fmt file.ul -w      # format in place
 ulang escape file.ul      # show stack vs heap allocation analysis
 ulang lsp                 # start the language server for editors
 ```
 
-Editor integration (VS Code, Neovim, and any LSP client) is described in
-[docs/editor-setup.md](docs/editor-setup.md).
+Package management is described in [docs/packages.md](docs/packages.md); editor
+integration in [docs/editor-setup.md](docs/editor-setup.md).
 
 ## Getting started
 
@@ -197,6 +203,7 @@ source → lexer → parser → checker → ┬→ interpreter (tree-walking)
 - `src/ffi.py` — C foreign-function interface.
 - `src/formatter.py` — canonical source formatter.
 - `src/lsp.py`, `src/lsp_analysis.py` — Language Server Protocol implementation.
+- `src/semver.py`, `src/manifest.py`, `src/registry.py`, `src/resolver.py`, `src/lockfile.py`, `src/packages.py`, `src/loader.py` — package manager.
 - `src/repl.py` — interactive shell.
 - `src/stdlib.py`, `src/builtins_mod.py` — built-in functions and modules.
 
@@ -227,6 +234,7 @@ Full guides and references live in [`docs/`](docs/):
 - [Standard Library](docs/stdlib.md)
 - [FFI Guide](docs/ffi.md)
 - [Concurrency Tutorial](docs/concurrency.md)
+- [Package Management](docs/packages.md)
 - [Editor Setup](docs/editor-setup.md)
 - [Why Ulang?](docs/why-ulang.md)
 

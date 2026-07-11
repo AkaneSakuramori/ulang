@@ -18,6 +18,7 @@ SUITES = [
     "test_fuzz.py",
     "test_docs.py",
     "test_lsp.py",
+    "test_packages.py",
 ]
 
 

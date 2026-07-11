@@ -9,5 +9,6 @@ build/
 *.ulc
 *.ll
 *.o
+ulang_modules/
 .claude/
 LANGUAGE_DESIGN_PLAN.md

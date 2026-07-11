@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Added
+- Package manager: `ulang install`, `add`, `remove`, `update`, `publish`, `search`,
+  and `list`. Manifests (`ulang.toml`), lockfiles (`ulang.lock`) for reproducible
+  builds, semantic-version constraints (`^`, `~`, ranges), a dependency resolver with
+  conflict detection, and a content-addressed registry with SHA-256 verification.
+- `import <package>` loads installed packages from `ulang_modules/`.
+- Package management guide in `docs/packages.md`.
 - Language Server Protocol implementation (`ulang lsp`): diagnostics, hover,
   completion, go-to-definition, document symbols, and formatting over JSON-RPC.
 - VS Code extension in `editors/vscode` with a TextMate grammar for highlighting.

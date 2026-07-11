@@ -59,6 +59,19 @@ def cmd_parse(path):
     return 0
 
 
+def _project_roots(path):
+    roots = []
+    d = os.path.dirname(os.path.abspath(path))
+    roots.append(d)
+    parent = os.path.dirname(d)
+    if parent and parent != d:
+        roots.append(parent)
+    cwd = os.getcwd()
+    if cwd not in roots:
+        roots.append(cwd)
+    return roots
+
+
 def cmd_run(path):
     with open(path, "r", encoding="utf-8") as f:
         source = f.read()
@@ -68,7 +81,9 @@ def cmd_run(path):
         print(f"error: {path}: {e}", file=sys.stderr)
         return 1
     try:
-        Interpreter().run(tree)
+        interp = Interpreter()
+        interp.search_roots = _project_roots(path)
+        interp.run(tree)
     except UlangPanic as e:
         print(f"panic: {e.message}", file=sys.stderr)
         return 1
@@ -188,6 +203,90 @@ def cmd_fmt(path, write=False):
     return 0
 
 
+def _project(path):
+    from packages import Project
+    return Project(path)
+
+
+def cmd_install(path):
+    from packages import Project, PackageError
+    try:
+        lock, installed = Project(path).install()
+    except PackageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    if not installed:
+        print("no dependencies")
+    for name, version in installed:
+        print(f"installed {name} {version}")
+    return 0
+
+
+def cmd_add(path, name, constraint):
+    from packages import Project, PackageError
+    try:
+        Project(path).add(name, constraint)
+    except PackageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"added {name}")
+    return 0
+
+
+def cmd_remove(path, name):
+    from packages import Project, PackageError
+    try:
+        Project(path).remove(name)
+    except PackageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"removed {name}")
+    return 0
+
+
+def cmd_update(path):
+    from packages import Project, PackageError
+    try:
+        lock, installed = Project(path).update()
+    except PackageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    for name, version in installed:
+        print(f"{name} {version}")
+    return 0
+
+
+def cmd_publish(path):
+    from packages import Project, PackageError
+    try:
+        name, version, checksum = Project(path).publish()
+    except PackageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"published {name} {version}")
+    print(f"checksum {checksum}")
+    return 0
+
+
+def cmd_search(query):
+    from registry import Registry
+    results = Registry().search(query)
+    if not results:
+        print("no packages found")
+        return 0
+    for r in results:
+        desc = f" - {r['description']}" if r["description"] else ""
+        print(f"{r['name']} {r['version']}{desc}")
+    return 0
+
+
+def cmd_list(path):
+    from packages import Project
+    for name, version in Project(path).installed():
+        print(f"{name} {version}")
+    return 0
+
+
 def cmd_init(name):
     manifest = f"""[package]
 name = "{name}"
@@ -228,9 +327,27 @@ def cmd_jit(path):
     return 0
 
 
+def _dispatch_add(args):
+    if os.path.exists(os.path.join(args[0], "ulang.toml")) and len(args) >= 2:
+        path = args[0]
+        name = args[1]
+        constraint = args[2] if len(args) > 2 else None
+    else:
+        path = "."
+        name = args[0]
+        constraint = args[1] if len(args) > 1 else None
+    return cmd_add(path, name, constraint)
+
+
+def _dispatch_remove(args):
+    if os.path.exists(os.path.join(args[0], "ulang.toml")) and len(args) >= 2:
+        return cmd_remove(args[0], args[1])
+    return cmd_remove(".", args[0])
+
+
 def main(argv):
     if len(argv) < 2:
-        print("usage: ulang <lex|parse|check|run|runvm|jit|build|emit-ir|escape|fmt|init|lsp|repl> ...", file=sys.stderr)
+        print("usage: ulang <run|build|check|install|add|remove|update|publish|search|list|fmt|init|lsp|repl|...> ...", file=sys.stderr)
         return 2
     command = argv[1]
     if command in ("version", "--version", "-v"):
@@ -245,6 +362,29 @@ def main(argv):
     if command == "init":
         name = argv[2] if len(argv) > 2 else "app"
         return cmd_init(name)
+    if command == "install":
+        return cmd_install(argv[2] if len(argv) > 2 else ".")
+    if command == "add":
+        if len(argv) < 3:
+            print("usage: ulang add [project] <package> [constraint]", file=sys.stderr)
+            return 2
+        return _dispatch_add(argv[2:])
+    if command == "remove":
+        if len(argv) < 3:
+            print("usage: ulang remove [project] <package>", file=sys.stderr)
+            return 2
+        return _dispatch_remove(argv[2:])
+    if command == "update":
+        return cmd_update(argv[2] if len(argv) > 2 else ".")
+    if command == "publish":
+        return cmd_publish(argv[2] if len(argv) > 2 else ".")
+    if command == "search":
+        if len(argv) < 3:
+            print("usage: ulang search <query>", file=sys.stderr)
+            return 2
+        return cmd_search(argv[2])
+    if command == "list":
+        return cmd_list(argv[2] if len(argv) > 2 else ".")
     if len(argv) < 3:
         print(f"usage: ulang {command} <file.ul>", file=sys.stderr)
         return 2
