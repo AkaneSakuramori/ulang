@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.8.6
+
+### Added
+- **Self-hosting Stage 3 — bytecode generation** (`selfhost/compiler/bytecode.ul`). It
+  compiles the syntax tree to stack-VM bytecode, mirroring the reference `src/compiler.py`:
+  all expression forms, control flow (`if`/`elif`/`else`, `while`, `for`, ternaries,
+  short-circuiting `and`/`or`), loops with `break`/`continue`, pattern-matching dispatch,
+  tail-position block values, index/attribute/tuple assignment, `with`/`defer`, nested
+  closures compiled recursively, and the same peephole pass (jump-to-next and
+  unreachable-code removal with jump-target remapping). It emits bytecode
+  instruction-for-instruction identical to the reference.
+- Validation (`tests/test_selfhost_bytecode.py`, with `tests/bytecode_serialize.py`
+  providing the canonical bytecode form): the self-hosted bytecode is verified identical to
+  the reference across a corpus exercising every bytecode form and every non-interpolation
+  example program.
+
+### Notes
+- The canonical syntax-tree form the self-hosted pipeline consumes keeps integer/boolean
+  literal values but treats strings and floats as opaque atoms. Constant strings and floats
+  compile to identical bytecode; the bytecode for string *interpolation* (whose embedded
+  sub-expressions are not carried by an opaque string atom) is the one form outside this
+  representation, is covered by the reference's own VM tests, and does not affect program
+  behavior. Remaining Stage-3 work: native code generation.
+
 ## 1.8.5
 
 ### Added

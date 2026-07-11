@@ -17,6 +17,7 @@ compiler/
   exports.ul     syntax tree  -> a module's public API (visibility / package exports)
   consteval.ul   syntax tree  -> compile-time values of constant expressions
   optimizer.ul   syntax tree  -> optimized syntax tree (behavior-preserving passes)
+  bytecode.ul    syntax tree  -> stack-VM bytecode (with peephole)
 ```
 
 ## Status
@@ -35,16 +36,23 @@ compiler/
     `let`/`const` bindings, dead-branch elimination (`if`/`elif`/`else`, `while false`,
     ternaries), and algebraic identities (`x + 0`, `x * 1`) — producing an optimized syntax
     tree byte-identical to the reference (`tests/test_selfhost_optimizer.py`).
+  - Bytecode generation (`bytecode.ul`): compiles the syntax tree to stack-VM bytecode,
+    mirroring the reference `src/compiler.py` — expressions, control flow, loops with
+    `break`/`continue`, pattern-matching dispatch, tail-position block values, nested
+    closures, and the same peephole pass (jump-to-next and unreachable-code removal with
+    jump-target remapping). Verified instruction-for-instruction identical to the reference
+    (`tests/test_selfhost_bytecode.py`).
 
 ## Note on literals
 
 The self-hosted pipeline exchanges a canonical syntax-tree form in which string and float
 literals are opaque atoms (`(str)`, `(flt)`); integer and boolean literals carry their
-values. Every optimizer pass over integer, boolean, and structural forms is therefore
-reproduced exactly. Constant folding of string/float *values* (for example `"a" + "b"` or
-`1.5 + 2.5`) is a property of the reference's literal-preserving AST that is intentionally
-outside this representation; it is covered by the reference's own optimizer tests and does
-not affect program behavior.
+values. Every pass over integer, boolean, and structural forms is therefore reproduced
+exactly. Two behaviors depend on literal *values* that this representation intentionally
+omits, are covered by the reference's own tests, and do not affect program behavior:
+constant folding of string/float values (e.g. `"a" + "b"`, `1.5 + 2.5`), and the bytecode
+for string *interpolation* (whose embedded sub-expressions are not carried by an opaque
+string atom). Constant strings and floats compile to identical (opaque) bytecode.
 
 ## Running
 

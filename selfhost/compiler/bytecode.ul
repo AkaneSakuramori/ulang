@@ -1,0 +1,771 @@
+import fs
+
+# --- S-expression reader ---
+
+fn read_sexpr(text: str) -> dyn:
+    let chars = text.chars()
+    let state = [chars, chars.len(), 0]
+    return parse_node(state)
+
+fn cur(state: dyn) -> str:
+    if state[2] >= state[1]:
+        return ""
+    return state[0][state[2]]
+
+fn parse_node(state: dyn) -> dyn:
+    skip_ws(state)
+    if cur(state) == "(":
+        state[2] = state[2] + 1
+        var items = []
+        while true:
+            skip_ws(state)
+            if cur(state) == ")":
+                state[2] = state[2] + 1
+                return items
+            if cur(state) == "":
+                return items
+            items.push(parse_node(state))
+        return items
+    return parse_atom(state)
+
+fn parse_atom(state: dyn) -> str:
+    var s = ""
+    while state[2] < state[1]:
+        let c = state[0][state[2]]
+        if c == " " or c == "(" or c == ")":
+            break
+        s += c
+        state[2] = state[2] + 1
+    return s
+
+fn skip_ws(state: dyn):
+    while state[2] < state[1] and state[0][state[2]] == " ":
+        state[2] = state[2] + 1
+
+fn is_atom(node: dyn) -> bool:
+    return not is_list(node)
+
+fn tag(node: dyn) -> str:
+    if is_list(node):
+        if node.len() == 0:
+            return ""
+        return node[0]
+    return node
+
+fn is_number_str(s: str) -> bool:
+    if s.len() == 0:
+        return false
+    var start = 0
+    if s.chars()[0] == "-":
+        if s.len() == 1:
+            return false
+        start = 1
+    var i = start
+    while i < s.len():
+        let c = s.chars()[i]
+        if not (c >= "0" and c <= "9"):
+            return false
+        i = i + 1
+    return true
+
+fn int_str(n: int) -> str:
+    if n == 0:
+        return "0"
+    var m = n
+    var neg = false
+    if m < 0:
+        neg = true
+        m = 0 - m
+    var s = ""
+    let ds = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    while m > 0:
+        s = ds[m % 10] + s
+        m = m / 10
+    if neg:
+        return "-" + s
+    return s
+
+# --- code object: a mutable list of instructions ---
+# Each instruction is [op, arg] where arg is a string ("" when none).
+# We build with a Compiler struct that owns the instruction list + loop stack.
+
+type Compiler:
+    instrs: dyn
+    loops: dyn
+
+fn new_compiler() -> Compiler:
+    return Compiler([], [])
+
+fn emit(c: Compiler, op: str, arg: str) -> int:
+    c.instrs.push([op, arg])
+    return c.instrs.len() - 1
+
+fn here(c: Compiler) -> int:
+    return c.instrs.len()
+
+fn patch(c: Compiler, index: int):
+    c.instrs[index][1] = int_str(here(c))
+
+# --- constant rendering (matches bytecode_serialize.render_const) ---
+
+fn const_of(node: dyn) -> str:
+    if is_atom(node):
+        if is_number_str(node):
+            return node
+        if node == "true":
+            return "true"
+        if node == "false":
+            return "false"
+        if node == "none":
+            return "none"
+    if is_list(node) and tag(node) == "flt":
+        return "(flt)"
+    if is_list(node) and tag(node) == "str":
+        return "(str)"
+    return "(?)"
+
+fn load_const(c: Compiler, node: dyn):
+    emit(c, "LOAD_CONST", const_of(node))
+
+fn load_unit(c: Compiler):
+    emit(c, "LOAD_CONST", "unit")
+
+# --- expression compilation ---
+
+fn compile_expr(c: Compiler, node: dyn):
+    if is_atom(node):
+        if is_number_str(node):
+            emit(c, "LOAD_CONST", node)
+        elif node == "true" or node == "false":
+            emit(c, "LOAD_CONST", node)
+        elif node == "none":
+            emit(c, "LOAD_CONST", "none")
+        else:
+            emit(c, "LOAD_NAME", node)
+        return
+    let t = tag(node)
+    if t == "str":
+        compile_string(c, node)
+    elif t == "flt":
+        emit(c, "LOAD_CONST", "(flt)")
+    elif t == "list":
+        compile_seq(c, node, "BUILD_LIST")
+    elif t == "tuple":
+        compile_seq(c, node, "BUILD_TUPLE")
+    elif t == "dict":
+        compile_dict(c, node)
+    elif t == "ternary":
+        compile_ternary(c, node)
+    elif t == "and" or t == "or":
+        compile_logical(c, node)
+    elif t == "==" or t == "!=" or t == "<" or t == "<=" or t == ">" or t == ">=" or t == "+" or t == "-" or t == "*" or t == "/" or t == "%":
+        compile_binop(c, node)
+    elif t == "neg":
+        compile_expr(c, node[1])
+        emit(c, "UNARY", "-")
+    elif t == "not":
+        compile_expr(c, node[1])
+        emit(c, "UNARY", "not")
+    elif t == "cll":
+        compile_call(c, node)
+    elif t == "idx":
+        compile_expr(c, node[1])
+        compile_expr(c, node[2])
+        emit(c, "GET_INDEX", "")
+    elif t == "att":
+        compile_expr(c, node[1])
+        emit(c, "GET_ATTR", node[2])
+    elif t == "try":
+        compile_expr(c, node[1])
+        emit(c, "TRY_UNWRAP", "")
+    elif t == "lam":
+        compile_lambda(c, node)
+
+fn compile_string(c: Compiler, node: dyn):
+    # (str) is an opaque constant string in this representation: one part.
+    emit(c, "LOAD_CONST", "(str)")
+    emit(c, "BUILD_STRING", "1")
+
+fn compile_seq(c: Compiler, node: dyn, op: str):
+    var n = 0
+    var i = 1
+    while i < node.len():
+        compile_expr(c, node[i])
+        n = n + 1
+        i = i + 1
+    emit(c, op, int_str(n))
+
+fn compile_dict(c: Compiler, node: dyn):
+    var n = 0
+    var i = 1
+    while i < node.len():
+        let pair = node[i]
+        compile_expr(c, pair[1])
+        compile_expr(c, pair[2])
+        n = n + 1
+        i = i + 1
+    emit(c, "BUILD_DICT", int_str(n))
+
+fn compile_ternary(c: Compiler, node: dyn):
+    compile_expr(c, node[1])
+    let skip = emit(c, "JUMP_IF_FALSE", "")
+    compile_expr(c, node[2])
+    let end = emit(c, "JUMP", "")
+    patch(c, skip)
+    compile_expr(c, node[3])
+    patch(c, end)
+
+fn compile_logical(c: Compiler, node: dyn):
+    let op = node[0]
+    compile_expr(c, node[1])
+    emit(c, "DUP", "")
+    var skip = 0
+    if op == "and":
+        skip = emit(c, "JUMP_IF_FALSE", "")
+    else:
+        skip = emit(c, "JUMP_IF_TRUE", "")
+    emit(c, "POP", "")
+    compile_expr(c, node[2])
+    patch(c, skip)
+
+fn compile_binop(c: Compiler, node: dyn):
+    compile_expr(c, node[1])
+    compile_expr(c, node[2])
+    emit(c, "BINARY", node[0])
+
+fn compile_call(c: Compiler, node: dyn):
+    compile_expr(c, node[1])
+    var n = 0
+    var i = 2
+    while i < node.len():
+        let arg = node[i]
+        if is_list(arg) and tag(arg) == "named":
+            compile_expr(c, arg[2])
+        else:
+            compile_expr(c, arg)
+        n = n + 1
+        i = i + 1
+    emit(c, "CALL", int_str(n))
+
+fn compile_lambda(c: Compiler, node: dyn):
+    let inner = new_compiler()
+    let body = node[2]
+    if is_list(body) and tag(body) == "block":
+        compile_block_value(inner, body)
+    else:
+        compile_expr(inner, body)
+    emit(inner, "RETURN", "")
+    c.instrs.push(["MAKE_CLOSURE", ["<lambda>", params_from(node[1]), inner.instrs]])
+
+fn params_from(params: dyn) -> [str]:
+    var out = []
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            let p = params[i]
+            if is_list(p):
+                out.push(p[1])
+            i = i + 1
+    return out
+
+# --- statement compilation ---
+
+fn compile_stmt(c: Compiler, node: dyn):
+    let t = tag(node)
+    if t == "let":
+        compile_expr(c, node[3])
+        store_pattern(c, node[1])
+    elif t == "var":
+        compile_expr(c, node[3])
+        emit(c, "STORE_NAME", node[1])
+    elif t == "asn":
+        compile_assign(c, node)
+    elif t == "ret":
+        compile_return(c, node)
+    elif t == "expr":
+        compile_expr(c, node[1])
+        emit(c, "POP", "")
+    elif t == "defer":
+        compile_expr(c, node[1])
+        emit(c, "POP", "")
+    elif t == "if":
+        compile_if(c, node)
+    elif t == "while":
+        compile_while(c, node)
+    elif t == "for":
+        compile_for(c, node)
+    elif t == "with":
+        compile_with(c, node)
+    elif t == "match":
+        compile_match(c, node)
+    elif t == "brk":
+        compile_break(c)
+    elif t == "cnt":
+        compile_continue(c)
+
+fn store_pattern(c: Compiler, pat: dyn):
+    if is_atom(pat):
+        if pat == "_":
+            emit(c, "POP", "")
+        else:
+            emit(c, "STORE_NAME", pat)
+        return
+    if tag(pat) == "tp":
+        emit(c, "STORE_NAME", "__tuple__")
+        var i = 1
+        while i < pat.len():
+            emit(c, "LOAD_NAME", "__tuple__")
+            emit(c, "LOAD_CONST", int_str(i - 1))
+            emit(c, "GET_INDEX", "")
+            store_pattern(c, pat[i])
+            i = i + 1
+
+fn compile_assign(c: Compiler, node: dyn):
+    let op = node[1]
+    let target = node[2]
+    if is_atom(target):
+        if op != "=":
+            emit(c, "LOAD_NAME", target)
+            compile_expr(c, node[3])
+            emit(c, "BINARY", strip_eq(op))
+        else:
+            compile_expr(c, node[3])
+        emit(c, "ASSIGN_NAME", target)
+    elif tag(target) == "idx":
+        compile_expr(c, target[1])
+        compile_expr(c, target[2])
+        if op != "=":
+            compile_expr(c, target[1])
+            compile_expr(c, target[2])
+            emit(c, "GET_INDEX", "")
+            compile_expr(c, node[3])
+            emit(c, "BINARY", strip_eq(op))
+        else:
+            compile_expr(c, node[3])
+        emit(c, "SET_INDEX", "")
+    elif tag(target) == "att":
+        compile_expr(c, target[1])
+        compile_expr(c, node[3])
+        emit(c, "SET_ATTR", target[2])
+
+fn strip_eq(op: str) -> str:
+    return substring(op, 0, op.len() - 1)
+
+fn substring(s: str, a: int, b: int) -> str:
+    var out = ""
+    var i = a
+    while i < b:
+        out += s.chars()[i]
+        i = i + 1
+    return out
+
+fn compile_return(c: Compiler, node: dyn):
+    if node.len() > 1:
+        compile_expr(c, node[1])
+    else:
+        load_unit(c)
+    emit(c, "RETURN", "")
+
+fn compile_if(c: Compiler, node: dyn):
+    var end_jumps = []
+    compile_expr(c, node[1])
+    let skip = emit(c, "JUMP_IF_FALSE", "")
+    compile_block(c, node[2])
+    end_jumps.push(emit(c, "JUMP", ""))
+    patch(c, skip)
+    let elifs = node[3]
+    var i = 0
+    while i < elifs.len():
+        let e = elifs[i]
+        compile_expr(c, e[1])
+        let s = emit(c, "JUMP_IF_FALSE", "")
+        compile_block(c, e[2])
+        end_jumps.push(emit(c, "JUMP", ""))
+        patch(c, s)
+        i = i + 1
+    if is_list(node[4]):
+        compile_block(c, node[4])
+    for j in end_jumps:
+        patch(c, j)
+
+fn compile_while(c: Compiler, node: dyn):
+    let start = here(c)
+    compile_expr(c, node[1])
+    let exit_jump = emit(c, "JUMP_IF_FALSE", "")
+    c.loops.push([[], start])
+    compile_block(c, node[2])
+    emit(c, "JUMP", int_str(start))
+    patch(c, exit_jump)
+    patch_breaks(c)
+
+fn compile_for(c: Compiler, node: dyn):
+    compile_expr(c, node[2])
+    emit(c, "ITER_NEW", "")
+    emit(c, "STORE_NAME", "__iter__")
+    let start = here(c)
+    emit(c, "LOAD_NAME", "__iter__")
+    emit(c, "ITER_NEXT", "")
+    let exit_jump = emit(c, "JUMP_IF_FALSE", "")
+    store_pattern(c, node[1])
+    c.loops.push([[], start])
+    compile_block(c, node[3])
+    emit(c, "JUMP", int_str(start))
+    patch(c, exit_jump)
+    patch_breaks(c)
+
+fn patch_breaks(c: Compiler):
+    let frame = c.loops.pop()
+    for b in frame[0]:
+        patch(c, b)
+
+fn compile_break(c: Compiler):
+    let j = emit(c, "JUMP", "")
+    let frame = c.loops[c.loops.len() - 1]
+    frame[0].push(j)
+
+fn compile_continue(c: Compiler):
+    let frame = c.loops[c.loops.len() - 1]
+    emit(c, "JUMP", int_str(frame[1]))
+
+fn compile_with(c: Compiler, node: dyn):
+    compile_expr(c, node[1])
+    if node[2] != "_":
+        emit(c, "STORE_NAME", node[2])
+    else:
+        emit(c, "POP", "")
+    compile_block(c, node[3])
+
+fn compile_match(c: Compiler, node: dyn):
+    compile_expr(c, node[1])
+    emit(c, "STORE_NAME", "__match__")
+    var end_jumps = []
+    var i = 2
+    while i < node.len():
+        let arm = node[i]
+        emit(c, "LOAD_NAME", "__match__")
+        emit(c, "MATCH_VARIANT", pattern_form(arm[1]))
+        let no_match = emit(c, "JUMP_IF_FALSE", "")
+        let body = arm[3]
+        if is_list(body) and tag(body) == "block":
+            compile_block(c, body)
+        else:
+            compile_expr(c, body)
+            emit(c, "POP", "")
+        end_jumps.push(emit(c, "JUMP", ""))
+        patch(c, no_match)
+        i = i + 1
+    for j in end_jumps:
+        patch(c, j)
+
+fn pattern_form(pat: dyn) -> str:
+    if is_atom(pat):
+        if pat == "_":
+            return "_"
+        return pat
+    let t = tag(pat)
+    if t == "litp":
+        return "(litp)"
+    if t == "vp":
+        return "(vp ${pat[1]} ${int_str(pat.len() - 2)})"
+    if t == "tp":
+        return "(tp ${int_str(pat.len() - 1)})"
+    return "(?)"
+
+fn compile_block(c: Compiler, block: dyn):
+    var i = 1
+    while i < block.len():
+        compile_stmt(c, block[i])
+        i = i + 1
+
+# --- tail-position block-value compilation (function bodies) ---
+
+fn compile_block_value(c: Compiler, block: dyn):
+    if block.len() == 1:
+        load_unit(c)
+        return
+    var i = 1
+    while i < block.len() - 1:
+        compile_stmt(c, block[i])
+        i = i + 1
+    compile_stmt_value(c, block[block.len() - 1])
+
+fn compile_stmt_value(c: Compiler, node: dyn):
+    let t = tag(node)
+    if t == "expr":
+        compile_expr(c, node[1])
+    elif t == "ret":
+        compile_stmt(c, node)
+    elif t == "match":
+        compile_match_value(c, node)
+    elif t == "if":
+        compile_if_value(c, node)
+    else:
+        compile_stmt(c, node)
+        load_unit(c)
+
+fn compile_match_value(c: Compiler, node: dyn):
+    compile_expr(c, node[1])
+    emit(c, "STORE_NAME", "__match__")
+    var end_jumps = []
+    var i = 2
+    while i < node.len():
+        let arm = node[i]
+        emit(c, "LOAD_NAME", "__match__")
+        emit(c, "MATCH_VARIANT", pattern_form(arm[1]))
+        let no_match = emit(c, "JUMP_IF_FALSE", "")
+        let body = arm[3]
+        if is_list(body) and tag(body) == "block":
+            compile_block_value(c, body)
+        else:
+            compile_expr(c, body)
+        end_jumps.push(emit(c, "JUMP", ""))
+        patch(c, no_match)
+        i = i + 1
+    load_unit(c)
+    for j in end_jumps:
+        patch(c, j)
+
+fn compile_if_value(c: Compiler, node: dyn):
+    var end_jumps = []
+    compile_expr(c, node[1])
+    let skip = emit(c, "JUMP_IF_FALSE", "")
+    compile_block_value(c, node[2])
+    end_jumps.push(emit(c, "JUMP", ""))
+    patch(c, skip)
+    let elifs = node[3]
+    var i = 0
+    while i < elifs.len():
+        let e = elifs[i]
+        compile_expr(c, e[1])
+        let s = emit(c, "JUMP_IF_FALSE", "")
+        compile_block_value(c, e[2])
+        end_jumps.push(emit(c, "JUMP", ""))
+        patch(c, s)
+        i = i + 1
+    if is_list(node[4]):
+        compile_block_value(c, node[4])
+    else:
+        load_unit(c)
+    for j in end_jumps:
+        patch(c, j)
+
+# --- function compilation ---
+
+fn compile_function(decl: dyn) -> dyn:
+    let c = new_compiler()
+    compile_block_value(c, decl[6])
+    emit(c, "RETURN", "")
+    let optimized = peephole(c.instrs)
+    return [decl[2], params_of(decl), optimized]
+
+fn params_of(decl: dyn) -> [str]:
+    var out = []
+    let params = decl[4]
+    if is_list(params):
+        var i = 1
+        while i < params.len():
+            let p = params[i]
+            if is_list(p):
+                out.push(p[1])
+            i = i + 1
+    return out
+
+# --- peephole (mirrors src/peephole.py) ---
+
+fn is_jump(op: str) -> bool:
+    return op == "JUMP" or op == "JUMP_IF_FALSE" or op == "JUMP_IF_TRUE"
+
+fn peephole(instrs: dyn) -> dyn:
+    var cur = instrs
+    var changed = true
+    while changed:
+        changed = false
+        let r1 = remove_jump_to_next(cur)
+        cur = r1[0]
+        if r1[1]:
+            changed = true
+        let r2 = remove_unreachable(cur)
+        cur = r2[0]
+        if r2[1]:
+            changed = true
+    return cur
+
+fn rebuild(instrs: dyn, keep: dyn) -> dyn:
+    var old_to_new = []
+    var new_instrs = []
+    var i = 0
+    while i < instrs.len():
+        if keep[i]:
+            old_to_new.push(new_instrs.len())
+            new_instrs.push(instrs[i])
+        else:
+            old_to_new.push(-1)
+        i = i + 1
+    let endpos = new_instrs.len()
+    # resolve dropped indices to the next kept index (or end)
+    i = 0
+    while i < old_to_new.len():
+        if old_to_new[i] < 0:
+            var j = i
+            while j < instrs.len() and old_to_new[j] < 0:
+                j = j + 1
+            if j < instrs.len():
+                old_to_new[i] = old_to_new[j]
+            else:
+                old_to_new[i] = endpos
+        i = i + 1
+    for ins in new_instrs:
+        if is_jump(ins[0]):
+            let target = to_int(ins[1])
+            var mapped = endpos
+            if target < old_to_new.len():
+                mapped = old_to_new[target]
+            ins[1] = int_str(mapped)
+    return new_instrs
+
+fn to_int(s: str) -> int:
+    if s == "":
+        return 0
+    var start = 0
+    var neg = false
+    if s.chars()[0] == "-":
+        neg = true
+        start = 1
+    var n = 0
+    var i = start
+    while i < s.len():
+        n = n * 10 + digit(s.chars()[i])
+        i = i + 1
+    if neg:
+        return 0 - n
+    return n
+
+fn digit(ch: str) -> int:
+    let ds = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    var i = 0
+    while i < 10:
+        if ds[i] == ch:
+            return i
+        i = i + 1
+    return 0
+
+fn jump_targets(instrs: dyn) -> dyn:
+    var targets = []
+    for ins in instrs:
+        if is_jump(ins[0]):
+            targets.push(to_int(ins[1]))
+    return targets
+
+fn contains_int(xs: dyn, n: int) -> bool:
+    for x in xs:
+        if x == n:
+            return true
+    return false
+
+fn remove_jump_to_next(instrs: dyn) -> dyn:
+    var keep = []
+    var removed = false
+    var i = 0
+    while i < instrs.len():
+        let ins = instrs[i]
+        if ins[0] == "JUMP" and to_int(ins[1]) == i + 1:
+            keep.push(false)
+            removed = true
+        else:
+            keep.push(true)
+        i = i + 1
+    if removed:
+        return [rebuild(instrs, keep), true]
+    return [instrs, false]
+
+fn remove_unreachable(instrs: dyn) -> dyn:
+    if instrs.len() == 0:
+        return [instrs, false]
+    let targets = jump_targets(instrs)
+    var keep = []
+    var reachable = true
+    var removed = false
+    var i = 0
+    while i < instrs.len():
+        let ins = instrs[i]
+        if contains_int(targets, i):
+            reachable = true
+        if not reachable:
+            keep.push(false)
+            removed = true
+        else:
+            keep.push(true)
+            if ins[0] == "JUMP" or ins[0] == "RETURN":
+                reachable = false
+        i = i + 1
+    if removed:
+        return [rebuild(instrs, keep), true]
+    return [instrs, false]
+
+# --- rendering (matches bytecode_serialize) ---
+
+fn render_program(module: dyn) -> str:
+    var out = ""
+    var first = true
+    for decl in module:
+        if tag(decl) == "fn":
+            let fnc = compile_function(decl)
+            if not first:
+                out += "\n"
+            out += render_code(fnc, 0)
+            first = false
+    return out
+
+fn indent_str(n: int) -> str:
+    var s = ""
+    var i = 0
+    while i < n:
+        s += " "
+        i = i + 1
+    return s
+
+fn render_code(fnc: dyn, indent: int) -> str:
+    let name = fnc[0]
+    let params = fnc[1]
+    let instrs = fnc[2]
+    let pad = indent_str(indent)
+    var out = "${pad}code ${name} [${join(params)}]"
+    var i = 0
+    while i < instrs.len():
+        let ins = instrs[i]
+        if ins[0] == "MAKE_CLOSURE":
+            out += "\n${pad}  ${int_str(i)}: MAKE_CLOSURE"
+            out += "\n" + render_code(ins[1], indent + 4)
+        else:
+            out += "\n${pad}  ${int_str(i)}: ${render_instr(ins)}"
+        i = i + 1
+    return out
+
+fn join(xs: dyn) -> str:
+    var out = ""
+    var i = 0
+    while i < xs.len():
+        if i > 0:
+            out += ","
+        out += xs[i]
+        i = i + 1
+    return out
+
+fn render_instr(ins: dyn) -> str:
+    let op = ins[0]
+    let arg = ins[1]
+    if arg == "":
+        return op
+    return "${op} ${arg}"
+
+fn main():
+    match fs.read("tree.sexpr"):
+        Ok(text) => run(text)
+        Err(e) => print("error: ${e}")
+
+fn run(text: str):
+    var module = []
+    for line in text.split("\n"):
+        if line.trim() != "":
+            module.push(read_sexpr(line))
+    print(render_program(module))

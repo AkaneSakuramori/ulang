@@ -6,7 +6,7 @@ Ulang is a compiled, statically-typed programming language with type inference,
 structured concurrency, and a clean, readable syntax. It compiles to native code,
 runs without a global interpreter lock, and treats errors as values.
 
-> Status: **1.8.5** — self-hosting Stage 3 in progress (AST optimizer), Stages 1–2 complete, cross-platform, optimizing compiler, garbage collector, package manager, and LSP.
+> Status: **1.8.6** — self-hosting Stage 3 in progress (optimizer + bytecode generation), Stages 1–2 complete, cross-platform, optimizing compiler, garbage collector, package manager, and LSP.
 
 ## Features
 
@@ -131,8 +131,10 @@ time; each stage is validated for identical behavior against the Python referenc
 - **Stage 3 — Optimization and code generation: in progress.**
   - `selfhost/compiler/optimizer.ul` — the reference AST optimizer's behavior-preserving
     passes (constant folding, propagation, dead-branch elimination, algebraic identities),
-    producing optimized syntax trees byte-identical to the reference. Remaining: bytecode
-    and native code generation.
+    producing optimized syntax trees byte-identical to the reference.
+  - `selfhost/compiler/bytecode.ul` — stack-VM bytecode generation (all control flow,
+    closures, pattern dispatch, and the peephole pass), instruction-for-instruction
+    identical to the reference. Remaining: native code generation.
 
 ```sh
 cp path/to/program.ul input.ul
