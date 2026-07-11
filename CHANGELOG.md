@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.8.0
+
+### Added
+- Self-hosting: a **full layout-aware lexer written in Ulang** (`selfhost/lexer_full.ul`),
+  the first step of Stage 1 (completing the self-hosted parser). Unlike the earlier
+  demonstration lexer, it produces the complete token stream — including significant
+  indentation as `INDENT`/`DEDENT`/`NEWLINE`, comment handling, string skipping, and
+  bracket-depth tracking — exactly as the reference lexer does.
+- `test_selfhost_lexer_full.py` validates it token-for-token (including all layout tokens)
+  against the Python reference lexer on all 23 example programs.
+
+### Notes
+- This lexer is the token source the self-hosted parser consumes. Implementing it required
+  no new language features and surfaced no language gaps — structs as mutable lexer state,
+  lists, and string indexing were sufficient.
+
 ## 1.7.0
 
 ### Added

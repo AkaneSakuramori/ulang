@@ -6,7 +6,7 @@ Ulang is a compiled, statically-typed programming language with type inference,
 structured concurrency, and a clean, readable syntax. It compiles to native code,
 runs without a global interpreter lock, and treats errors as values.
 
-> Status: **1.7.0** — self-hosting in progress (lexer + expression parser), cross-platform, optimizing compiler, garbage collector, package manager, and LSP.
+> Status: **1.8.0** — self-hosting in progress (full layout-aware lexer + expression parser), cross-platform, optimizing compiler, garbage collector, package manager, and LSP.
 
 ## Features
 
@@ -116,9 +116,11 @@ Milestones so far:
 1. **Lexer** (`selfhost/lexer.ul`) — its token stream is verified to match the reference
    lexer across keywords, identifiers, numbers, strings, comments, and operators.
 2. **Expression parser** (`selfhost/expr_parser.ul`) — a precedence-climbing parser that
-   emits a canonical AST (as S-expressions), verified against the reference parser's AST
-   across operator precedence, associativity, unary and postfix operators, calls, indexing,
-   attribute access, list literals, and ternaries.
+   emits a canonical AST (as S-expressions), verified against the reference parser's AST.
+3. **Full layout-aware lexer** (`selfhost/lexer_full.ul`) — a complete lexer that produces
+   the full token stream including significant indentation (`INDENT`/`DEDENT`/`NEWLINE`),
+   verified token-for-token against the reference lexer on every example program. This is
+   the foundation the self-hosted parser builds on.
 
 ```sh
 ulang run selfhost/lexer.ul          # tokenizes input.ul in the current directory

@@ -21,6 +21,7 @@ SUITES = [
     "test_packages.py",
     "test_optimizer.py",
     "test_selfhost.py",
+    "test_selfhost_lexer_full.py",
     "test_selfhost_parser.py",
     "test_memory.py",
     "test_platform.py",

@@ -1,0 +1,200 @@
+import fs
+
+fn is_digit(c: str) -> bool:
+    return c >= "0" and c <= "9"
+
+fn is_alpha(c: str) -> bool:
+    return (c >= "a" and c <= "z") or (c >= "A" and c <= "Z") or c == "_"
+
+fn is_alnum(c: str) -> bool:
+    return is_alpha(c) or is_digit(c)
+
+fn is_keyword(word: str) -> bool:
+    let words = ["fn", "let", "var", "const", "type", "enum", "trait", "impl",
+                 "derive", "pub", "import", "from", "as", "if", "elif", "else",
+                 "match", "while", "for", "in", "with", "defer", "return",
+                 "break", "continue", "extern", "and", "or", "not",
+                 "true", "false", "none"]
+    for kw in words:
+        if kw == word:
+            return true
+    return false
+
+fn two_char_op(pair: str) -> bool:
+    let ops = ["==", "!=", "<=", ">=", "->", "=>", "+=", "-=", "*=", "/=", "%=", "++"]
+    for op in ops:
+        if op == pair:
+            return true
+    return false
+
+type Lexer:
+    chars: dyn
+    n: int
+    i: int
+    indents: dyn
+    paren_depth: int
+    tokens: dyn
+    ls: int
+
+fn push(lx: Lexer, kind: str, text: str):
+    lx.tokens.push([kind, text])
+
+fn skip_string(lx: Lexer):
+    lx.i = lx.i + 1
+    while lx.i < lx.n and lx.chars[lx.i] != "\"":
+        if lx.chars[lx.i] == "\\":
+            lx.i = lx.i + 1
+        lx.i = lx.i + 1
+    lx.i = lx.i + 1
+
+fn line_indent(lx: Lexer) -> int:
+    var indent = 0
+    while lx.i < lx.n and (lx.chars[lx.i] == " " or lx.chars[lx.i] == "\t"):
+        indent += 1
+        lx.i = lx.i + 1
+    return indent
+
+fn handle_line_start(lx: Lexer):
+    let indent = line_indent(lx)
+    if lx.i >= lx.n:
+        return
+    let c = lx.chars[lx.i]
+    if c == "\n":
+        lx.i = lx.i + 1
+        lx.ls = 1
+        return
+    if c == "#":
+        while lx.i < lx.n and lx.chars[lx.i] != "\n":
+            lx.i = lx.i + 1
+        if lx.i < lx.n:
+            lx.i = lx.i + 1
+        lx.ls = 1
+        return
+    emit_indent(lx, indent)
+
+fn emit_indent(lx: Lexer, indent: int):
+    let top = lx.indents[lx.indents.len() - 1]
+    if indent > top:
+        lx.indents.push(indent)
+        push(lx, "indent", "")
+    elif indent < top:
+        while lx.indents[lx.indents.len() - 1] > indent:
+            lx.indents.pop()
+            push(lx, "dedent", "")
+
+fn scan_token(lx: Lexer):
+    let c = lx.chars[lx.i]
+    if c == "#":
+        while lx.i < lx.n and lx.chars[lx.i] != "\n":
+            lx.i = lx.i + 1
+        return
+    if c == "\n":
+        lx.i = lx.i + 1
+        if lx.paren_depth == 0:
+            push(lx, "newline", "")
+        return
+    if c == " " or c == "\t":
+        lx.i = lx.i + 1
+        return
+    if c == "\"":
+        skip_string(lx)
+        push(lx, "str", "")
+        return
+    if is_digit(c):
+        scan_number(lx)
+        return
+    if is_alpha(c):
+        scan_ident(lx)
+        return
+    scan_operator(lx)
+
+fn scan_ident(lx: Lexer):
+    var word = ""
+    while lx.i < lx.n and is_alnum(lx.chars[lx.i]):
+        word += lx.chars[lx.i]
+        lx.i = lx.i + 1
+    if is_keyword(word):
+        push(lx, "kw", word)
+    else:
+        push(lx, "id", word)
+
+fn scan_number(lx: Lexer):
+    var num = ""
+    var is_float = false
+    while lx.i < lx.n and (is_digit(lx.chars[lx.i]) or lx.chars[lx.i] == "_"):
+        if lx.chars[lx.i] != "_":
+            num += lx.chars[lx.i]
+        lx.i = lx.i + 1
+    if lx.i < lx.n and lx.chars[lx.i] == "." and lx.i + 1 < lx.n and is_digit(lx.chars[lx.i + 1]):
+        is_float = true
+        lx.i = lx.i + 1
+        while lx.i < lx.n and is_digit(lx.chars[lx.i]):
+            lx.i = lx.i + 1
+    if is_float:
+        push(lx, "float", "")
+    else:
+        push(lx, "int", num)
+
+fn scan_operator(lx: Lexer):
+    let c = lx.chars[lx.i]
+    var pair = c
+    if lx.i + 1 < lx.n:
+        pair = c + lx.chars[lx.i + 1]
+    if lx.i + 1 < lx.n and two_char_op(pair):
+        push(lx, "op", pair)
+        lx.i = lx.i + 2
+        return
+    if c == "(" or c == "[":
+        lx.paren_depth += 1
+    elif c == ")" or c == "]":
+        if lx.paren_depth > 0:
+            lx.paren_depth -= 1
+    push(lx, "op", c)
+    lx.i = lx.i + 1
+
+fn at_line_start(lx: Lexer) -> bool:
+    if lx.tokens.len() == 0:
+        return true
+    let last = lx.tokens[lx.tokens.len() - 1][0]
+    return last == "newline" or last == "indent" or last == "dedent"
+
+fn tokenize(source: str) -> [dyn]:
+    let lx = Lexer(source.chars(), source.chars().len(), 0, [0], 0, [], 1)
+    while lx.i < lx.n:
+        if lx.ls == 1 and lx.paren_depth == 0:
+            lx.ls = 0
+            handle_line_start(lx)
+            continue
+        scan_token_ls(lx)
+    finish(lx)
+    return lx.tokens
+
+fn scan_token_ls(lx: Lexer):
+    let before = lx.tokens.len()
+    scan_token(lx)
+    if lx.tokens.len() > before:
+        let last = lx.tokens[lx.tokens.len() - 1][0]
+        if last == "newline":
+            lx.ls = 1
+
+fn finish(lx: Lexer):
+    if lx.tokens.len() > 0:
+        let last = lx.tokens[lx.tokens.len() - 1][0]
+        if last != "newline" and last != "indent" and last != "dedent":
+            push(lx, "newline", "")
+    while lx.indents.len() > 1:
+        lx.indents.pop()
+        push(lx, "dedent", "")
+    push(lx, "eof", "")
+
+fn main():
+    match fs.read("input.ul"):
+        Ok(source) => emit(tokenize(source))
+        Err(e) => print("error: ${e}")
+
+fn emit(tokens: [dyn]):
+    for tok in tokens:
+        if tok[1] == "":
+            print(tok[0])
+        else:
+            print("${tok[0]} ${tok[1]}")
