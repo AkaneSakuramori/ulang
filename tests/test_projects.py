@@ -27,6 +27,7 @@ STATS_EXPECTED = 'n:        6\nmean:     18.0\nvariance: 151.66666666666666\nstd
 LISP_EXPECTED = '(+ 1 2 3 4)       = 10\n(* 2 3 4)         = 24\n(- 10 3 2)        = 5\n(square 9)        = 81\n(fact 5)          = 120\n(fib 10)          = 55\n(if (< 3 2) 1 2)  = 2\n(let x 5 (* x x)) = 25\n'
 REPORT_EXPECTED = 'report written to team_report.txt\n\nTeam Report\n===========\nteam      members   total\nalpha     3         270 (avg 90)\nbeta      2         150 (avg 75)\nrecords: 5\n\n'
 GRAPH_EXPECTED = 'a: dist=0 path=a\nb: dist=1 path=a -> b\nd: dist=2 path=a -> b -> d\ne: dist=3 path=a -> b -> d -> e\nf: dist=2 path=a -> c -> f\ny: unreachable\n'
+LOGANALYZER_EXPECTED = 'skipped: not a valid log line\nparsed 8 entries\nunique messages: 4\nby level:\n  INFO: 4\n  WARN: 2\n  ERROR: 2\nby hour:\n  09: 5\n  10: 3\n'
 PROGRAMS = [
     ("calc/calc.ul", CALC_EXPECTED),
     ("wordstats/wordstats.ul", WORDSTATS_EXPECTED),
@@ -39,6 +40,7 @@ PROGRAMS = [
     ("lisp/lisp.ul", LISP_EXPECTED),
     ("report/report.ul", REPORT_EXPECTED),
     ("graph/graph.ul", GRAPH_EXPECTED),
+    ("loganalyzer/loganalyzer.ul", LOGANALYZER_EXPECTED),
 ]
 
 

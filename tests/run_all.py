@@ -30,6 +30,7 @@ SUITES = [
     "test_selfhost_codegen.py",
     "test_bootstrap.py",
     "test_projects.py",
+    "test_stdlib_2_1.py",
     "test_memory.py",
     "test_platform.py",
 ]

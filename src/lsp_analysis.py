@@ -194,8 +194,9 @@ class Analyzer:
             return f"**{kind}** `{name}`"
         if name in BUILTINS:
             return f"**builtin** `{name}`"
-        if name in stdlib.MODULES:
-            members = ", ".join(sorted(stdlib.MODULES[name].members))
+        if name in stdlib.ALL_MODULE_NAMES:
+            mod = stdlib.get_module(name)
+            members = ", ".join(sorted(mod.members)) if mod else ""
             return f"**module** `{name}`\n\nMembers: {members}"
         return None
 
@@ -227,7 +228,7 @@ class Analyzer:
             items.append({"label": kw, "kind": COMPLETION_KIND["keyword"]})
         for name in sorted(BUILTINS):
             items.append({"label": name, "kind": COMPLETION_KIND["function"]})
-        for name in sorted(stdlib.MODULES):
+        for name in sorted(stdlib.ALL_MODULE_NAMES):
             items.append({"label": name, "kind": COMPLETION_KIND["module"]})
         for name in sorted(self.definitions()):
             items.append({"label": name, "kind": COMPLETION_KIND["variable"]})

@@ -11,6 +11,7 @@ VM, and confirms the self-hosted compiler can compile it.
 | [`wordstats`](wordstats/) | Word-frequency and text statistics. String processing, dictionaries, and higher-order list operations (`map`/`filter`/`sort`/`reduce`). |
 | [`jsonfmt`](jsonfmt/) | A JSON value model and pretty-printer. Recursive enums, enum payloads of varied shapes, recursive rendering with indentation. |
 | [`life`](life/) | Conway's Game of Life. Nested lists, in-place mutation, neighbour counting, generation stepping. |
+| [`loganalyzer`](loganalyzer/) | Log-file analyzer using `regex` (line parsing), `crypto` (content-hash dedup), and aggregation. Validates the 2.1 standard library. |
 | [`rpn`](rpn/) | A Reverse Polish Notation calculator with typed error handling. `Result`, the `?` operator, and a value stack. |
 | [`table`](table/) | A text table formatter with aligned, padded columns. Standard-library string methods (`repeat`, `substring`) and list-of-lists data. |
 | [`kvstore`](kvstore/) | An in-memory key/value store with a text command language (SET/GET/DEL/INCR/EXISTS/KEYS/COUNT). Dictionaries, `Option`, `Result`, and a request/response loop over shared state. |

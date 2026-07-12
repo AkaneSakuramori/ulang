@@ -166,6 +166,248 @@ def _parse_int(s):
         return err(f"invalid int: {s}")
 
 
+# --- 2.1 ecosystem modules -------------------------------------------------
+
+def _regex_module():
+    import re as _re
+
+    def _search(a):
+        m = _re.search(a[0], a[1])
+        return some(m.group(0)) if m else NONE
+
+    def _match(a):
+        return _re.fullmatch(a[0], a[1]) is not None
+
+    def _find_all(a):
+        return _re.findall(a[0], a[1])
+
+    def _replace(a):
+        # replace(pattern, replacement, text)
+        return _re.sub(a[0], a[1], a[2])
+
+    def _split(a):
+        return _re.split(a[0], a[1])
+
+    def _groups(a):
+        m = _re.search(a[0], a[1])
+        if not m:
+            return NONE
+        return some(list(m.groups()))
+
+    def _test(a):
+        return _re.search(a[0], a[1]) is not None
+
+    return Module("regex", {
+        "test": Builtin("test", _test),
+        "search": Builtin("search", _search),
+        "match": Builtin("match", _match),
+        "find_all": Builtin("find_all", _find_all),
+        "replace": Builtin("replace", _replace),
+        "split": Builtin("split", _split),
+        "groups": Builtin("groups", _groups),
+    })
+
+
+def _encoding_module():
+    import base64 as _b64
+    import urllib.parse as _url
+
+    def _b64_encode(a):
+        return _b64.b64encode(a[0].encode("utf-8")).decode("ascii")
+
+    def _b64_decode(a):
+        try:
+            return ok(_b64.b64decode(a[0]).decode("utf-8"))
+        except Exception as e:
+            return err(str(e))
+
+    def _hex_encode(a):
+        return a[0].encode("utf-8").hex()
+
+    def _hex_decode(a):
+        try:
+            return ok(bytes.fromhex(a[0]).decode("utf-8"))
+        except Exception as e:
+            return err(str(e))
+
+    return Module("encoding", {
+        "base64_encode": Builtin("base64_encode", _b64_encode),
+        "base64_decode": Builtin("base64_decode", _b64_decode),
+        "hex_encode": Builtin("hex_encode", _hex_encode),
+        "hex_decode": Builtin("hex_decode", _hex_decode),
+        "url_encode": Builtin("url_encode", lambda a: _url.quote(a[0], safe="")),
+        "url_decode": Builtin("url_decode", lambda a: _url.unquote(a[0])),
+    })
+
+
+def _crypto_module():
+    import hashlib as _hl
+    import hmac as _hmac
+
+    return Module("crypto", {
+        "md5": Builtin("md5", lambda a: _hl.md5(a[0].encode("utf-8")).hexdigest()),
+        "sha1": Builtin("sha1", lambda a: _hl.sha1(a[0].encode("utf-8")).hexdigest()),
+        "sha256": Builtin("sha256", lambda a: _hl.sha256(a[0].encode("utf-8")).hexdigest()),
+        "sha512": Builtin("sha512", lambda a: _hl.sha512(a[0].encode("utf-8")).hexdigest()),
+        "hmac_sha256": Builtin("hmac_sha256",
+                               lambda a: _hmac.new(a[0].encode("utf-8"),
+                                                   a[1].encode("utf-8"),
+                                                   _hl.sha256).hexdigest()),
+    })
+
+
+def _compress_module():
+    import zlib as _zlib
+    import base64 as _b64
+
+    def _compress(a):
+        raw = _zlib.compress(a[0].encode("utf-8"), 9)
+        return _b64.b64encode(raw).decode("ascii")
+
+    def _decompress(a):
+        try:
+            raw = _b64.b64decode(a[0])
+            return ok(_zlib.decompress(raw).decode("utf-8"))
+        except Exception as e:
+            return err(str(e))
+
+    return Module("compress", {
+        "compress": Builtin("compress", _compress),
+        "decompress": Builtin("decompress", _decompress),
+    })
+
+
+def _os_module():
+    import os as _os
+    import subprocess as _sp
+
+    def _getenv(a):
+        v = _os.environ.get(a[0])
+        return some(v) if v is not None else NONE
+
+    def _run(a):
+        # os.run(["cmd", "arg", ...]) -> Result[{code, stdout, stderr}, str]
+        try:
+            r = _sp.run(list(a[0]), capture_output=True, text=True)
+            return ok(Struct("ProcessResult", {
+                "code": r.returncode,
+                "stdout": r.stdout,
+                "stderr": r.stderr,
+            }))
+        except Exception as e:
+            return err(str(e))
+
+    def _args(a):
+        import sys as _sys
+        return list(_sys.argv[1:])
+
+    return Module("os", {
+        "getenv": Builtin("getenv", _getenv),
+        "setenv": Builtin("setenv", lambda a: (_os.environ.__setitem__(a[0], a[1]), None)[1]),
+        "cwd": Builtin("cwd", lambda a: _os.getcwd()),
+        "listdir": Builtin("listdir", lambda a: _os_listdir(a[0])),
+        "mkdir": Builtin("mkdir", lambda a: _os_mkdir(a[0])),
+        "remove": Builtin("remove", lambda a: _os_remove(a[0])),
+        "run": Builtin("run", _run),
+        "args": Builtin("args", _args),
+    })
+
+
+def _os_listdir(path):
+    import os as _os
+    try:
+        return ok(sorted(_os.listdir(path)))
+    except OSError as e:
+        return err(str(e))
+
+
+def _os_mkdir(path):
+    import os as _os
+    try:
+        _os.makedirs(path, exist_ok=True)
+        return ok(None)
+    except OSError as e:
+        return err(str(e))
+
+
+def _os_remove(path):
+    import os as _os
+    try:
+        _os.remove(path)
+        return ok(None)
+    except OSError as e:
+        return err(str(e))
+
+
+def _log_module():
+    import sys as _sys
+
+    _levels = {"debug": 10, "info": 20, "warn": 30, "error": 40}
+    _state = {"level": 20}
+
+    def _emit(level, msg):
+        if _levels[level] >= _state["level"]:
+            _sys.stderr.write(f"[{level.upper()}] {ulang_str(msg)}\n")
+        return None
+
+    def _set_level(a):
+        name = a[0]
+        if name in _levels:
+            _state["level"] = _levels[name]
+        return None
+
+    return Module("log", {
+        "debug": Builtin("debug", lambda a: _emit("debug", a[0])),
+        "info": Builtin("info", lambda a: _emit("info", a[0])),
+        "warn": Builtin("warn", lambda a: _emit("warn", a[0])),
+        "error": Builtin("error", lambda a: _emit("error", a[0])),
+        "set_level": Builtin("set_level", _set_level),
+    })
+
+
+def _datetime_module():
+    import datetime as _dt
+
+    def _now(a):
+        n = _dt.datetime.now()
+        return _dt_struct(n)
+
+    def _from_unix(a):
+        n = _dt.datetime.fromtimestamp(a[0])
+        return _dt_struct(n)
+
+    def _format(a):
+        # datetime.format(dt_struct, "YYYY-MM-DD HH:mm:ss")
+        s = a[0]
+        pat = a[1]
+        rep = {
+            "YYYY": f"{s.fields['year']:04d}",
+            "MM": f"{s.fields['month']:02d}",
+            "DD": f"{s.fields['day']:02d}",
+            "HH": f"{s.fields['hour']:02d}",
+            "mm": f"{s.fields['minute']:02d}",
+            "ss": f"{s.fields['second']:02d}",
+        }
+        out = pat
+        for k, v in rep.items():
+            out = out.replace(k, v)
+        return out
+
+    return Module("datetime", {
+        "now": Builtin("now", _now),
+        "from_unix": Builtin("from_unix", _from_unix),
+        "format": Builtin("format", _format),
+    })
+
+
+def _dt_struct(n):
+    return Struct("DateTime", {
+        "year": n.year, "month": n.month, "day": n.day,
+        "hour": n.hour, "minute": n.minute, "second": n.second,
+        "weekday": n.weekday(),
+    })
+
+
 def _platform_module():
     import platform_abi
     import tempfile
@@ -197,4 +439,21 @@ MODULES = {
 def get_module(name):
     if name == "platform":
         return _platform_module()
+    _lazy = {
+        "regex": _regex_module,
+        "encoding": _encoding_module,
+        "crypto": _crypto_module,
+        "compress": _compress_module,
+        "os": _os_module,
+        "log": _log_module,
+        "datetime": _datetime_module,
+    }
+    if name in _lazy:
+        return _lazy[name]()
     return MODULES.get(name)
+
+
+# All standard-library module names (eager + lazily constructed), for tooling.
+ALL_MODULE_NAMES = sorted(set(MODULES) | {
+    "platform", "regex", "encoding", "crypto", "compress", "os", "log", "datetime",
+})

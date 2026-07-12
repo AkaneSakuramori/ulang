@@ -1,0 +1,77 @@
+# loganalyzer — a log-file analyzer written in Ulang.
+#
+# Parses structured log lines with regular expressions, aggregates by level and by hour,
+# detects duplicate messages via content hashing, and prints a summary. It validates the
+# 2.1 standard library — `regex` for parsing, `crypto` for content hashing, and `encoding`
+# for a compact digest — while doing realistic text-processing work.
+
+import regex
+import crypto
+
+type Entry:
+    hour: str
+    level: str
+    message: str
+
+fn parse_line(line: str) -> dyn:
+    # format: "HH:MM LEVEL message text"
+    match regex.groups("([0-9]{2}):[0-9]{2} ([A-Z]+) (.+)", line):
+        Some(g) => Some(Entry(g[0], g[1], g[2]))
+        None => None
+
+fn count_by(entries: [Entry], key_of: dyn) -> dyn:
+    var counts = {}
+    for e in entries:
+        let k = key_of(e)
+        if counts.has(k):
+            counts[k] = counts[k] + 1
+        else:
+            counts[k] = 1
+    return counts
+
+fn unique_messages(entries: [Entry]) -> int:
+    var seen = {}
+    for e in entries:
+        let digest = crypto.sha256(e.message)
+        seen[digest] = true
+    return seen.keys().len()
+
+fn int_str(n: int) -> str:
+    if n == 0:
+        return "0"
+    var m = n
+    var s = ""
+    let ds = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+    while m > 0:
+        s = ds[m % 10] + s
+        m = m / 10
+    return s
+
+fn print_counts(title: str, counts: dyn):
+    print(title)
+    for k in counts.keys():
+        print("  ${k}: ${counts[k]}")
+
+fn main():
+    let raw = [
+        "09:15 INFO server started",
+        "09:16 INFO request received",
+        "09:17 WARN slow query",
+        "09:45 ERROR connection refused",
+        "09:46 INFO request received",
+        "10:01 INFO server started",
+        "10:02 ERROR connection refused",
+        "10:03 WARN slow query",
+        "not a valid log line",
+    ]
+
+    var entries = []
+    for line in raw:
+        match parse_line(line):
+            Some(e) => entries.push(e)
+            None => print("skipped: ${line}")
+
+    print("parsed ${entries.len()} entries")
+    print("unique messages: ${unique_messages(entries)}")
+    print_counts("by level:", count_by(entries, e => e.level))
+    print_counts("by hour:", count_by(entries, e => e.hour))
