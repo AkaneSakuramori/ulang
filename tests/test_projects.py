@@ -25,7 +25,7 @@ TABLE_EXPECTED = '+----------+-------+-------------+\n| language | typed | self-
 KVSTORE_EXPECTED = 'SET a 10  ->  OK\nSET b 20  ->  OK\nGET a  ->  10\nINCR a 5  ->  15\nGET a  ->  15\nEXISTS b  ->  true\nEXISTS z  ->  false\nDEL b  ->  deleted\nGET b  ->  ERR no such key: b\nCOUNT  ->  1\nSET c notanumber  ->  ERR value must be an integer\nINCR counter 1  ->  1\nINCR counter 1  ->  2\nGET counter  ->  2\nKEYS  ->  a, counter\nPING  ->  ERR unknown command: PING\n'
 STATS_EXPECTED = 'n:        6\nmean:     18.0\nvariance: 151.66666666666666\nstddev:   12.315302134607444\nmin:      4.0\nmax:      42.0\nmedian:   15.5\n'
 LISP_EXPECTED = '(+ 1 2 3 4)       = 10\n(* 2 3 4)         = 24\n(- 10 3 2)        = 5\n(square 9)        = 81\n(fact 5)          = 120\n(fib 10)          = 55\n(if (< 3 2) 1 2)  = 2\n(let x 5 (* x x)) = 25\n'
-REPORT_EXPECTED = 'report written to /tmp/ulang_report.txt\n\nTeam Report\n===========\nteam      members   total\nalpha     3         270 (avg 90)\nbeta      2         150 (avg 75)\nrecords: 5\n\n'
+REPORT_EXPECTED = 'report written to team_report.txt\n\nTeam Report\n===========\nteam      members   total\nalpha     3         270 (avg 90)\nbeta      2         150 (avg 75)\nrecords: 5\n\n'
 GRAPH_EXPECTED = 'a: dist=0 path=a\nb: dist=1 path=a -> b\nd: dist=2 path=a -> b -> d\ne: dist=3 path=a -> b -> d -> e\nf: dist=2 path=a -> c -> f\ny: unreachable\n'
 PROGRAMS = [
     ("calc/calc.ul", CALC_EXPECTED),
@@ -43,8 +43,12 @@ PROGRAMS = [
 
 
 def _run(cmd, path):
-    r = subprocess.run([sys.executable, ULANG, cmd, os.path.join(PROJECTS, path)],
-                       capture_output=True, text=True)
+    # Run each project in a throwaway working directory so file-writing projects use a
+    # portable relative path and never litter the repository.
+    import tempfile
+    with tempfile.TemporaryDirectory() as cwd:
+        r = subprocess.run([sys.executable, ULANG, cmd, os.path.join(PROJECTS, path)],
+                           capture_output=True, text=True, cwd=cwd)
     return r.returncode, r.stdout, r.stderr
 
 

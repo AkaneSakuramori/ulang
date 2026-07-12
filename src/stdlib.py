@@ -168,6 +168,7 @@ def _parse_int(s):
 
 def _platform_module():
     import platform_abi
+    import tempfile
     host = platform_abi.HOST
     return Module("platform", {
         "os": host.os,
@@ -178,6 +179,7 @@ def _platform_module():
         "is_windows": Builtin("is_windows", lambda a: host.os == platform_abi.WINDOWS),
         "is_macos": Builtin("is_macos", lambda a: host.os == platform_abi.MACOS),
         "is_linux": Builtin("is_linux", lambda a: host.os == platform_abi.LINUX),
+        "tmpdir": Builtin("tmpdir", lambda a: tempfile.gettempdir()),
     })
 
 

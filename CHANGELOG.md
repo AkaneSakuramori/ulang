@@ -24,6 +24,8 @@ Documented in full in `docs/2.0-findings.md`:
 - Self-hosted lexer now tracks `${ ... }` interpolation depth, correctly handling nested
   string literals inside interpolations (fixing false diagnostics on programs like `lisp`).
 - Self-hosted compiler driver forces UTF-8 across platforms (Windows correctness).
+- Added `platform.tmpdir()` for a portable temporary directory (file-writing programs no
+  longer need to hardcode `/tmp`).
 
 All of the above are backward-compatible and apply to both the interpreter and the VM.
 

@@ -92,8 +92,8 @@ fn main():
     let csv = "name,team,score\nada,alpha,90\nlinus,beta,80\ngrace,alpha,95\ndennis,beta,70\nken,alpha,85"
     let rows = parse_csv(csv)
     let report = build_report(rows)
-    match fs.write("/tmp/ulang_report.txt", report):
-        Ok(_) => print("report written to /tmp/ulang_report.txt")
+    match fs.write("team_report.txt", report):
+        Ok(_) => print("report written to team_report.txt")
         Err(e) => print("error: ${e}")
     print("")
     print(report)
