@@ -6,7 +6,7 @@ Ulang is a compiled, statically-typed programming language with type inference,
 structured concurrency, and a clean, readable syntax. It compiles to native code,
 runs without a global interpreter lock, and treats errors as values.
 
-> Status: **2.0.0** — first stable release. A self-hosted compiler pipeline with a validated bootstrap, exercised by a suite of real-world programs; cross-platform, four execution engines (interpreter, VM, JIT, native), garbage collector, package manager, and LSP.
+> Status: **2.1.0** — ecosystem foundation. A production-quality standard library (regex, crypto, encoding, compression, os/processes, datetime, logging, and more) on a stable, self-hosted compiler pipeline; cross-platform, four execution engines (interpreter, VM, JIT, native), garbage collector, package manager, and LSP.
 
 ## Features
 
@@ -157,7 +157,7 @@ for the full bootstrap process and the current state of self-hosting.
 
 ## Software built in Ulang
 
-Eleven reference programs in [`projects/`](projects/) are written entirely in Ulang and
+Reference programs in [`projects/`](projects/) are written entirely in Ulang and
 validate the language on real work. Each runs identically on the interpreter and the
 bytecode VM and is compiled by the self-hosted compiler; all are pinned by
 `tests/test_projects.py`.
@@ -175,6 +175,7 @@ bytecode VM and is compiled by the self-hosted compiler; all are pinned by
 | [`table`](projects/table/) | Aligned text-table formatter |
 | [`report`](projects/report/) | CSV report generator with file I/O |
 | [`life`](projects/life/) | Conway's Game of Life |
+| [`loganalyzer`](projects/loganalyzer/) | Log analyzer using `regex` and `crypto` (2.1 stdlib) |
 
 Building these surfaced genuine gaps that were fixed in the language and standard library
 (comparator `sort`, string `substring`/`index_of`/`repeat`, additional `math` functions, a
@@ -204,7 +205,27 @@ Optimizations are on by default; set `ULANG_NO_OPT=1` to disable them.
 
 ## Standard library
 
-Modules available via `import`: `fs`, `json`, `math`, `time`, `str`, `random`, `list`.
+Modules available via `import`, covering the core facilities expected from a modern
+general-purpose language:
+
+| Module | Purpose |
+|---|---|
+| `fs` | Read, write, open, and check files |
+| `os` | Environment variables, working directory, directory listing, process execution, args |
+| `json` | Parse and serialize JSON |
+| `regex` | Match, search, replace, split, and capture groups |
+| `encoding` | Base64, hex, and URL encode/decode |
+| `crypto` | MD5, SHA-1/256/512, and HMAC-SHA256 |
+| `compress` | zlib compression and decompression |
+| `datetime` | Current time, Unix conversion, and formatting |
+| `time` | Timestamps and sleeping |
+| `math` | `sqrt`, `pow`, trig, `log`/`exp`, `min`/`max`, `round`, and constants |
+| `log` | Leveled logging (`debug`/`info`/`warn`/`error`) |
+| `str`, `list` | String and list helpers |
+| `random` | Random integers, floats, and choices |
+| `platform` | OS/arch introspection and the temp directory |
+
+See the [Standard Library reference](docs/stdlib.md) for the full API.
 
 ## Tooling
 

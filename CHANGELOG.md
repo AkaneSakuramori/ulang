@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.1.0 — foundation for the ecosystem
+
+Ulang 2.1 begins the ecosystem era: the standard library is expanded into a
+production-quality foundation so developers can build and publish real libraries and
+applications entirely in Ulang. The success measure is barriers removed, not features
+added.
+
+### Standard library
+Seven new modules, all available on the interpreter and the bytecode VM
+(`tests/test_stdlib_2_1.py`):
+- **`regex`** — `test`, `match`, `search`, `find_all`, `replace`, `split`, `groups`.
+- **`encoding`** — Base64, hex, and URL encode/decode.
+- **`crypto`** — `md5`, `sha1`, `sha256`, `sha512`, `hmac_sha256`.
+- **`compress`** — zlib `compress`/`decompress` (base64-wrapped).
+- **`os`** — `getenv`/`setenv`, `cwd`, `listdir`, `mkdir`, `remove`, `run` (subprocess),
+  `args`.
+- **`datetime`** — `now`, `from_unix`, and `format`, with a `DateTime` struct.
+- **`log`** — leveled logging (`debug`/`info`/`warn`/`error`, `set_level`).
+
+The standard library now spans 15 modules; `stdlib.ALL_MODULE_NAMES` exposes the full set,
+and the language server offers hover and completion for every module. Documented in
+`docs/stdlib.md`.
+
+### Ecosystem validation
+- A reusable library (`textkit`) that depends on the new modules was published to a
+  registry, installed as a dependency, and consumed from an application — validating the
+  end-to-end package workflow for library authors.
+- New reference program `projects/loganalyzer` parses logs with `regex` and de-duplicates
+  messages with `crypto`, dogfooding the new APIs (12 reference projects, all validated on
+  the interpreter and VM and compiled by the self-hosted compiler).
+
+### Compatibility
+- Backward-compatible: no existing program changes behavior. 28 test suites pass on Linux,
+  macOS, and Windows.
+
 ## 2.0.0 — first stable release
 
 Ulang's first stable release. The compiler pipeline is self-hosted (written in Ulang and

@@ -84,7 +84,8 @@ print(None.unwrap_or(0)) # 0
 ### `math`
 
 `math.sqrt(x)`, `math.pow(x, y)`, `math.floor(x)`, `math.ceil(x)`, `math.abs(x)`,
-and the constants `math.pi`, `math.e`.
+`math.sin(x)`, `math.cos(x)`, `math.tan(x)`, `math.log(x[, base])`, `math.exp(x)`,
+`math.min(a, b)`, `math.max(a, b)`, `math.round(x)`, and the constants `math.pi`, `math.e`.
 
 ### `time`
 
@@ -102,6 +103,63 @@ and the constants `math.pi`, `math.e`.
 ### `list`
 
 `list.range(a, b)`, `list.repeat(x, n)`, `list.concat(a, b)`.
+
+### `os` — environment and processes
+
+| Function | Returns |
+|----------|---------|
+| `os.getenv(name)` | `Option[str]` |
+| `os.setenv(name, value)` | `none` |
+| `os.cwd()` | `str` — current working directory |
+| `os.listdir(path)` | `Result[[str], str]` |
+| `os.mkdir(path)` | `Result[none, str]` (creates parents) |
+| `os.remove(path)` | `Result[none, str]` |
+| `os.run(argv)` | `Result[ProcessResult, str]` — `.code`, `.stdout`, `.stderr` |
+| `os.args()` | `[str]` — command-line arguments |
+
+### `regex` — regular expressions
+
+| Function | Returns |
+|----------|---------|
+| `regex.test(pattern, text)` | `bool` — does the pattern occur? |
+| `regex.match(pattern, text)` | `bool` — does the pattern match the whole string? |
+| `regex.search(pattern, text)` | `Option[str]` — first match |
+| `regex.find_all(pattern, text)` | `[str]` |
+| `regex.replace(pattern, replacement, text)` | `str` |
+| `regex.split(pattern, text)` | `[str]` |
+| `regex.groups(pattern, text)` | `Option[[str]]` — captured groups |
+
+### `encoding` — text encodings
+
+`encoding.base64_encode(s)` / `encoding.base64_decode(s)` (returns `Result`),
+`encoding.hex_encode(s)` / `encoding.hex_decode(s)` (returns `Result`),
+`encoding.url_encode(s)` / `encoding.url_decode(s)`.
+
+### `crypto` — hashing
+
+`crypto.md5(s)`, `crypto.sha1(s)`, `crypto.sha256(s)`, `crypto.sha512(s)` (all return a
+hex digest), and `crypto.hmac_sha256(key, message)`.
+
+### `compress` — compression
+
+`compress.compress(s)` returns a base64-wrapped zlib payload; `compress.decompress(s)`
+returns `Result[str, str]`.
+
+### `datetime` — dates and times
+
+`datetime.now()` and `datetime.from_unix(seconds)` return a `DateTime` (`.year`, `.month`,
+`.day`, `.hour`, `.minute`, `.second`, `.weekday`). `datetime.format(dt, pattern)` supports
+`YYYY`, `MM`, `DD`, `HH`, `mm`, `ss`.
+
+### `log` — leveled logging
+
+`log.debug(msg)`, `log.info(msg)`, `log.warn(msg)`, `log.error(msg)` write to standard
+error; `log.set_level("debug"|"info"|"warn"|"error")` sets the threshold.
+
+### `platform` — host introspection
+
+`platform.os`, `platform.arch`, `platform.exe_ext`, `platform.is_windows()`,
+`platform.is_macos()`, `platform.is_linux()`, and `platform.tmpdir()`.
 
 ## Example
 
