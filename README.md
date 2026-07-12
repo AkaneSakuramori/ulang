@@ -6,7 +6,7 @@ Ulang is a compiled, statically-typed programming language with type inference,
 structured concurrency, and a clean, readable syntax. It compiles to native code,
 runs without a global interpreter lock, and treats errors as values.
 
-> Status: **1.9.0** — integrated self-hosted compiler with a validated bootstrap; self-hosting Stages 1–3 complete (parser, semantic analysis, optimizer + bytecode + native codegen), cross-platform, optimizing compiler, garbage collector, package manager, and LSP.
+> Status: **2.0.0** — first stable release. A self-hosted compiler pipeline with a validated bootstrap, exercised by a suite of real-world programs; cross-platform, four execution engines (interpreter, VM, JIT, native), garbage collector, package manager, and LSP.
 
 ## Features
 
@@ -100,10 +100,14 @@ Indicative timings (single machine; all engines produce identical output):
 
 | Benchmark            | Interpreter | Bytecode VM | JIT     | Native  |
 |----------------------|-------------|-------------|---------|---------|
-| `fib(30)`            | ~22 s       | ~11 s       | ~13 ms  | ~5 ms   |
-| `count_primes(20k)`  | ~1.3 s      | ~1.4 s      | ~75 ms  | ~2 ms   |
+| `fib(30)`            | ~20 s       | ~13 s       | ~16 ms  | ~5 ms   |
+| `count_primes(20k)`  | ~2.0 s      | ~1.8 s      | ~91 ms  | ~2.5 ms |
+| `loop_sum(3M)`       | ~5.5 s      | ~9.3 s      | ~5.7 s  | ~2.8 ms |
 
-Run them with `python3 bench/benchmark.py`.
+Other tracked metrics: interpreter startup ~45 ms, native `fib` binary ~16.7 KB. Run the
+runtime benchmarks with `python3 bench/benchmark.py` and the toolchain metrics with
+`python3 bench/metrics.py`; full results and methodology are in
+[docs/benchmarks.md](docs/benchmarks.md).
 
 ## Self-hosting
 
@@ -150,6 +154,32 @@ The bootstrap — the Python reference building and running the Ulang compiler, 
 Ulang compiler compiling its own source — is validated end to end
 (`tests/test_bootstrap.py`, 150/150). See [docs/bootstrapping.md](docs/bootstrapping.md)
 for the full bootstrap process and the current state of self-hosting.
+
+## Software built in Ulang
+
+Eleven reference programs in [`projects/`](projects/) are written entirely in Ulang and
+validate the language on real work. Each runs identically on the interpreter and the
+bytecode VM and is compiled by the self-hosted compiler; all are pinned by
+`tests/test_projects.py`.
+
+| Project | Domain |
+|---|---|
+| [`calc`](projects/calc/) | Arithmetic expression evaluator (lexer, precedence parser, evaluator) |
+| [`lisp`](projects/lisp/) | A small Lisp interpreter — reader, environments, closures, recursion |
+| [`kvstore`](projects/kvstore/) | In-memory key/value store with a command language |
+| [`rpn`](projects/rpn/) | RPN calculator with typed error handling (`Result`, `?`) |
+| [`jsonfmt`](projects/jsonfmt/) | JSON value model and pretty-printer (recursive enums) |
+| [`graph`](projects/graph/) | Breadth-first shortest paths on a directed graph |
+| [`stats`](projects/stats/) | Numerical statistics toolkit (mean, variance, median) |
+| [`wordstats`](projects/wordstats/) | Word-frequency and text statistics |
+| [`table`](projects/table/) | Aligned text-table formatter |
+| [`report`](projects/report/) | CSV report generator with file I/O |
+| [`life`](projects/life/) | Conway's Game of Life |
+
+Building these surfaced genuine gaps that were fixed in the language and standard library
+(comparator `sort`, string `substring`/`index_of`/`repeat`, additional `math` functions, a
+higher recursion limit, and a self-hosted-lexer fix for nested string interpolation). The
+full record is in [docs/2.0-findings.md](docs/2.0-findings.md).
 
 ```sh
 cp path/to/program.ul input.ul
@@ -300,6 +330,9 @@ Full guides and references live in [`docs/`](docs/):
 - [Memory Management](docs/memory.md)
 - [Cross-Platform Support](docs/cross-platform.md)
 - [Editor Setup](docs/editor-setup.md)
+- [Bootstrapping the Compiler](docs/bootstrapping.md)
+- [Benchmarks](docs/benchmarks.md)
+- [2.0 Real-World Findings](docs/2.0-findings.md)
 - [Why Ulang?](docs/why-ulang.md)
 
 ## Roadmap

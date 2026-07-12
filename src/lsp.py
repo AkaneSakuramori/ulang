@@ -80,7 +80,7 @@ class LSPServer:
                 "documentSymbolProvider": True,
                 "documentFormattingProvider": True,
             },
-            "serverInfo": {"name": "ulang-lsp", "version": "1.9.0"},
+            "serverInfo": {"name": "ulang-lsp", "version": "2.0.0"},
         }
 
     def on_initialized(self, params, request_id):

@@ -1,20 +1,43 @@
 # Changelog
 
-## Unreleased (toward 2.0)
+## 2.0.0 — first stable release
 
-### Added
-- **Reference projects** (`projects/`) — substantial real-world Ulang programs used to
-  validate the language and toolchain end to end: `calc` (an arithmetic expression
-  evaluator — tokenizer, precedence-climbing parser, evaluator) and `wordstats` (text
-  statistics using dictionaries and higher-order list operations). Each is pinned by
-  `tests/test_projects.py`, which checks output, interpreter/VM parity, and self-hosted
-  compilation.
+Ulang's first stable release. The compiler pipeline is self-hosted (written in Ulang and
+validated against the Python reference), integrated behind a single command, and exercised
+by a suite of real-world programs that drove concrete language and standard-library
+improvements.
 
-### Improved
-- `list.sort(cmp)` now accepts an optional comparator function (`fn(a, b) -> int`, negative
-  / zero / positive, or a bool), in addition to the existing no-argument natural sort. This
-  is a backward-compatible standard-library completion surfaced by the reference projects;
-  it applies to both the interpreter and the bytecode VM.
+### Real-world validation
+- **Eleven reference programs** in `projects/`, written entirely in Ulang, spanning
+  expression evaluation, a Lisp interpreter, an in-memory key/value store, error-handling
+  pipelines, JSON modelling, graph search, numerics, text processing, table formatting,
+  file-based reporting, and cellular automata. Each runs identically on the interpreter and
+  the bytecode VM and is compiled by the self-hosted compiler; all are pinned by
+  `tests/test_projects.py`.
+
+### Improvements surfaced by building real software
+Documented in full in `docs/2.0-findings.md`:
+- `list.sort(cmp)` accepts an optional comparator (`fn(a, b) -> int` or bool).
+- New string methods: `str.substring(start[, end])`, `str.index_of(sub)`, `str.repeat(n)`.
+- New `math` functions: `sin`, `cos`, `tan`, `log`, `exp`, `min`, `max`, `round`.
+- Recursion depth raised from 2500 to 5000 frames (the runtime already provides the stack).
+- Self-hosted lexer now tracks `${ ... }` interpolation depth, correctly handling nested
+  string literals inside interpolations (fixing false diagnostics on programs like `lisp`).
+- Self-hosted compiler driver forces UTF-8 across platforms (Windows correctness).
+
+All of the above are backward-compatible and apply to both the interpreter and the VM.
+
+### Benchmarks
+- Refreshed runtime benchmarks and added `bench/metrics.py` (startup, binary size,
+  self-hosted compile time); results and methodology in `docs/benchmarks.md`.
+
+### Honest state of self-hosting
+- The compiler pipeline is written in Ulang and integrated behind `ulang selfhost`, with a
+  validated bootstrap (`tests/test_bootstrap.py`). The **runtime host is still the Python
+  reference**: a `.ul` program — including each compiler stage — is executed by the Python
+  interpreter/VM. A fully Python-independent toolchain requires compiling the Ulang compiler
+  to a native binary, which requires the native backend to cover the whole language (heap
+  types, closures, GC). That work is scoped in `docs/bootstrapping.md` and remains ahead.
 
 ## 1.9.0
 
